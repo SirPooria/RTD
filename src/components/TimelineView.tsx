@@ -88,11 +88,11 @@ export const TimelineView: React.FC = () => {
           </div>
 
           <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-slate-100 mb-3 text-glow-emerald">
-            جدول زمانی کامل فیلم‌ها و سریال‌های MCU
+            جدول زمانی فیلم‌ها و سریال‌های MCU
           </h1>
 
           <p className="text-sm sm:text-base text-slate-300 leading-relaxed mb-6">
-            تمام ۷۸ عنوان رسمی شامل فیلم‌ها، سریال‌ها، برنامه‌های ویژه و حماسه فاکس/مردان ایکس به ترتیب زمانی.
+            تمام ۷۸ عنوان رسمی شامل فیلم‌ها، سریال‌ها، برنامه‌های ویژه به ترتیب زمانی.
           </p>
         </div>
       </div>
