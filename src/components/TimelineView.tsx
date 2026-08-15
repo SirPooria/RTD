@@ -444,7 +444,6 @@ export const TimelineView: React.FC = () => {
     </div>
   );
   import { Heart } from "lucide-react";
-
   export default function DonateButton() {
     return (
       <a
