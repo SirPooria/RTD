@@ -443,4 +443,19 @@ export const TimelineView: React.FC = () => {
       </div>
     </div>
   );
+  import { Heart } from "lucide-react";
+
+  export default function DonateButton() {
+    return (
+      <a
+        href="https://daramet.com/Spinner" // لینک درگاه یا صفحه دونیت خودتان
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed bottom-6 left-6 z-50 flex items-center gap-2 px-4 py-2.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-medium text-sm backdrop-blur-md shadow-lg hover:bg-emerald-500 hover:text-slate-950 transition-all duration-300 group"
+      >
+        <Heart className="w-4 h-4 text-emerald-400 group-hover:text-slate-950 transition-colors" />
+        <span>حمایت از پروژه</span>
+      </a>
+    );
+  }
 };
