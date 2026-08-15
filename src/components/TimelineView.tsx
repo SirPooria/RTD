@@ -13,6 +13,7 @@ import {
   BookOpen,
   ChevronDown,
   ChevronUp,
+  Heart,
   BarChart2
 } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
@@ -442,11 +443,7 @@ export const TimelineView: React.FC = () => {
         </div>
       </div>
     </div>
-  );
-  import { Heart } from "lucide-react";
-  export default function DonateButton() {
-    return (
-      <a
+    <a
         href="https://daramet.com/Spinner" // لینک درگاه یا صفحه دونیت خودتان
         target="_blank"
         rel="noopener noreferrer"
@@ -455,6 +452,5 @@ export const TimelineView: React.FC = () => {
         <Heart className="w-4 h-4 text-emerald-400 group-hover:text-slate-950 transition-colors" />
         <span>حمایت از پروژه</span>
       </a>
-    );
-  }
+  );
 };
