@@ -1,0 +1,46 @@
+{
+  "entities": {
+    "users": {
+      "title": "User",
+      "description": "Registered user credentials and activity",
+      "type": "document",
+      "fields": {
+        "username": {
+          "type": "string",
+          "description": "Username"
+        },
+        "password": {
+          "type": "string",
+          "description": "Password"
+        },
+        "registeredAt": {
+          "type": "string",
+          "description": "Registration ISO timestamp"
+        },
+        "lastLoginAt": {
+          "type": "string",
+          "description": "Last login ISO timestamp"
+        }
+      }
+    },
+    "userWatchedItems": {
+      "title": "User Watched Items",
+      "description": "Items watched by a user",
+      "type": "document",
+      "fields": {
+        "username": {
+          "type": "string",
+          "description": "Username"
+        },
+        "watchedIds": {
+          "type": "array",
+          "description": "List of watched item IDs"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Updated ISO timestamp"
+        }
+      }
+    }
+  }
+}

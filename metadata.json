@@ -1,0 +1,6 @@
+{
+  "name": "مسیر دومزدی - Road to Doomsday",
+  "description": "MCU Chronological Timeline Tracker & Doomsday Guide in Persian (Farsi)",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
