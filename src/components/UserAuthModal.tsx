@@ -34,8 +34,8 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
       return;
     }
 
-    if (password.trim().length < 4) {
-      setErrorMsg('رمز عبور باید حداقل ۴ کاراکتر باشد.');
+    if (password.trim().length < 6) {
+      setErrorMsg('رمز عبور باید حداقل 6 کاراکتر باشد.');
       return;
     }
 
@@ -128,7 +128,7 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
                 {mode === 'login' ? 'ورود به حساب کاربری' : 'ثبت‌نام کاربر جدید'}
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                اطلاعات شما به صورت مستقیم در دیتابیس پروژه ثبت خواهد شد
+                اطلاعات شما ثبت خواهدشد
               </p>
             </div>
 
@@ -221,7 +221,7 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
                 className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-lg shadow-emerald-500/20 disabled:opacity-50 flex items-center justify-center gap-2 mt-2"
               >
                 {loading ? (
-                  <span>در حال ارتباط با دیتابیس...</span>
+                  <span>در حال ثبت نام...</span>
                 ) : mode === 'login' ? (
                   <>
                     <LogIn className="w-4 h-4" />
@@ -230,7 +230,7 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
                 ) : (
                   <>
                     <UserPlus className="w-4 h-4" />
-                    <span>ثبت‌نام و ذخیره در دیتابیس</span>
+                    <span>ثبت‌نام </span>
                   </>
                 )}
               </button>
