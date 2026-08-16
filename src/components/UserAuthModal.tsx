@@ -98,7 +98,7 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
               <h3 className="text-xl font-bold text-slate-100">حساب کاربری فعال</h3>
               <p className="text-sm text-emerald-400 font-mono mt-1">@{currentUser.username}</p>
               <p className="text-xs text-slate-400 mt-2">
-                اطلاعات شما و لیست فیلم‌های دیده‌شده به صورت زنده در پایگاه داده پروژه ثبت شده است.
+                اطلاعات شما و لیست فیلم‌های دیده‌شده به صورت زنده ثبت شده است.
               </p>
             </div>
 
@@ -127,9 +127,6 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
               <h3 className="text-xl font-bold text-slate-100">
                 {mode === 'login' ? 'ورود به حساب کاربری' : 'ثبت‌نام کاربر جدید'}
               </h3>
-              <p className="text-xs text-slate-400 mt-1">
-                اطلاعات شما ثبت خواهدشد
-              </p>
             </div>
 
             {/* Mode Switcher Tabs */}
