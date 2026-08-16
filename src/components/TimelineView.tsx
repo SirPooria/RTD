@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTimeline } from '../context/TimelineContext';
 import { MovieCard, toPersianDigits } from './MovieCard';
+import { UserAuthModal } from './UserAuthModal'; // مسیر این فایل را در صورت نیاز اصلاح کن
 import {
   CheckCircle2,
   Filter,
@@ -38,10 +39,21 @@ export const TimelineView: React.FC = () => {
     essentialWatchedCount,
     essentialCount,
     totalWatchedRuntimeMinutes,
-    visitorStats
+    visitorStats,
+    currentUser // اضافه شدن استیت کاربر
   } = useTimeline();
 
   const [showBriefing, setShowBriefing] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false); // استیت کنترل مودال
+
+  // بررسی وضعیت لاگین در هنگام باز شدن سایت
+  useEffect(() => {
+    if (!currentUser) {
+      setIsAuthModalOpen(true);
+    } else {
+      setIsAuthModalOpen(false);
+    }
+  }, [currentUser]);
 
   // Filter items
   const filteredItems = items.filter((item) => {
@@ -88,15 +100,13 @@ export const TimelineView: React.FC = () => {
           </div>
 
           <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-slate-100 mb-3 text-glow-emerald">
-            جدول زمانی فیلم‌ها و سریال‌های MCU
+            جدول زمانی فیلم‌و سریال‌های MCU
           </h1>
-
           <p className="text-sm sm:text-base text-slate-300 leading-relaxed mb-6">
             تمام ۷۸ عنوان رسمی شامل فیلم‌ها، سریال‌ها، برنامه‌های ویژه به ترتیب زمانی.
           </p>
         </div>
       </div>
-
       {/* Grid Layout: Sidebar + Main Content */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         {/* Left/Sidebar Panel (RTL: Stats & Filters Sticky Drawer) */}
@@ -108,7 +118,6 @@ export const TimelineView: React.FC = () => {
                 <Sparkles className="w-4 h-4 text-emerald-400" />
                 <span>پیشرفت کل در مسیر دومزدی</span>
               </h3>
-
               {/* Circular Gauge */}
               <div className="relative w-32 h-32 mx-auto mb-4 flex items-center justify-center">
                 <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
@@ -442,14 +451,23 @@ export const TimelineView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* دکمه دونیت جابجا شد و به داخل تگ اصلی برگشت تا ارور ندهد */}
+      <a
+        href="https://daramet.com/Spinner"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed bottom-6 left-6 z-50 flex items-center gap-2 px-4 py-2.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-medium text-sm backdrop-blur-md shadow-lg hover:bg-emerald-500 hover:text-slate-950 transition-all duration-300 group"
+      >
+        <Heart className="w-4 h-4 text-emerald-400 group-hover:text-slate-950 transition-colors" />
+        <span>حمایت از پروژه</span>
+      </a>
+
+      {/* فراخوانی مودال ورود/ثبت‌نام */}
+      <UserAuthModal 
+        isOpen={isAuthModalOpen} 
+        onClose={() => setIsAuthModalOpen(false)} 
+      />
     </div>
-    );
-    <a
-    href="https://daramet.com/Spinner"
-    target="_blank"
-    rel="noopener noreferrer"
-    className="fixed bottom-6 left-6 z-50 flex items-center gap-2 px-4 py-2.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-medium text-sm backdrop-blur-md shadow-lg hover:bg-emerald-500 hover:text-slate-950 transition-all duration-300 group">
-      <Heart className="w-4 h-4 text-emerald-400 group-hover:text-slate-950 transition-colors" />
-      <span>حمایت از پروژه</span>
-    </a>
+  );
 };
