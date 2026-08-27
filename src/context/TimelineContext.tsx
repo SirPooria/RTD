@@ -1,14 +1,19 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Era, FilterStatus, MCUItem } from '../types';
 import { INITIAL_ERAS, INITIAL_MCU_ITEMS, MOCK_VISITOR_STATS } from '../data/mcuTimelineData';
+import { starwarsTimelineData } from '../data/starwarsTimelineData';
 import { db } from '../lib/firebase';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+
+export type UniverseType = 'mcu' | 'starwars';
 
 interface UserState {
   username: string;
 }
 
 interface TimelineContextType {
+  universe: UniverseType;
+  setUniverse: (universe: UniverseType) => void;
   items: MCUItem[];
   eras: Era[];
   watchedIds: Set<string>;
@@ -55,18 +60,48 @@ interface TimelineContextType {
 }
 
 const STORAGE_KEYS = {
-  WATCHED: 'road_to_doomsday_watched_ids',
+  WATCHED_MCU: 'road_to_doomsday_watched_ids',
+  WATCHED_SW: 'starwars_watched_ids',
   ITEMS: 'road_to_doomsday_items',
   ERAS: 'road_to_doomsday_eras',
   ADMIN_AUTH: 'road_to_doomsday_admin_auth',
-  CURRENT_USER: 'road_to_doomsday_current_user'
+  CURRENT_USER: 'road_to_doomsday_current_user',
+  UNIVERSE: 'selected_universe'
 };
+
+// Eras پیش‌فرض برای استاروارز
+const STARWARS_ERAS: Era[] = [
+  { id: 'high-republic', name: 'عصر اوج جمهوری', color: 'from-amber-600 to-yellow-500' },
+  { id: 'prequels', name: 'دوران پیش‌درآمد و ظهور سیت', color: 'from-blue-600 to-cyan-500' },
+  { id: 'clone-wars', name: 'جنگ‌های کلون', color: 'from-indigo-600 to-blue-500' },
+  { id: 'empire-rise', name: 'عصر سلطه امپراتوری', color: 'from-red-700 to-rose-600' },
+  { id: 'rebellion', name: 'دوران اتحاد شورشیان', color: 'from-orange-600 to-amber-500' },
+  { id: 'original-trilogy', name: 'سه‌گانه کلاسیک', color: 'from-emerald-600 to-teal-500' },
+  { id: 'new-republic', name: 'عصر جمهوری جدید', color: 'from-cyan-600 to-blue-600' },
+  { id: 'sequels', name: 'سه‌گانه سیکوئل', color: 'from-purple-600 to-pink-500' }
+];
 
 const TimelineContext = createContext<TimelineContextType | undefined>(undefined);
 
 export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // 1. Items state
-  const [items, setItems] = useState<MCUItem[]>(() => {
+  // Universe state
+  const [universe, setUniverseState] = useState<UniverseType>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.UNIVERSE);
+      return (saved === 'starwars' || saved === 'mcu') ? saved : 'mcu';
+    } catch {
+      return 'mcu';
+    }
+  });
+
+  const setUniverse = (u: UniverseType) => {
+    setUniverseState(u);
+    localStorage.setItem(STORAGE_KEYS.UNIVERSE, u);
+    setSelectedEraId('all');
+  };
+
+  // MCU Items state
+  const [mcuItems, setMcuItems] = useState<MCUItem[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.ITEMS);
       if (saved) {
@@ -81,20 +116,49 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   });
 
-  // 2. Eras state
-  const [eras] = useState<Era[]>(INITIAL_ERAS);
+  // Star Wars Items تبدیل شده به تایپ استاندارد
+  const starwarsItems: MCUItem[] = starwarsTimelineData.map((item) => ({
+    id: item.id,
+    chronoOrder: item.order,
+    titleFa: item.titleFa,
+    titleEn: item.titleEn,
+    releaseYear: item.releaseYear,
+    inUniverseYear: item.inUniverseYear,
+    rtScore: item.rtScore,
+    isEssential: item.isEssential,
+    watchFor: item.watchFor,
+    tiesIn: item.tiesIn,
+    type: item.type,
+    eraId: item.eraId,
+    runtimeMinutes: item.type === 'movie' ? 130 : 45
+  }));
 
-  // 3. Watched state
-  const [watchedIds, setWatchedIds] = useState<Set<string>>(() => {
+  // تعیین آیتم‌ها و دوره‌ها بر اساس دنیای فعال
+  const items = universe === 'mcu' ? mcuItems : starwarsItems;
+  const eras = universe === 'mcu' ? INITIAL_ERAS : STARWARS_ERAS;
+
+  // Watched state تفکیک‌شده
+  const [watchedMcuIds, setWatchedMcuIds] = useState<Set<string>>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEYS.WATCHED);
+      const saved = localStorage.getItem(STORAGE_KEYS.WATCHED_MCU);
       return saved ? new Set<string>(JSON.parse(saved)) : new Set<string>();
     } catch {
       return new Set<string>();
     }
   });
 
-  // 4. Current User State
+  const [watchedSwIds, setWatchedSwIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.WATCHED_SW);
+      return saved ? new Set<string>(JSON.parse(saved)) : new Set<string>();
+    } catch {
+      return new Set<string>();
+    }
+  });
+
+  const watchedIds = universe === 'mcu' ? watchedMcuIds : watchedSwIds;
+
+  // Current User State
   const [currentUser, setCurrentUser] = useState<UserState | null>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
@@ -104,40 +168,30 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   });
 
-  // 5. Admin Auth (Only true if currentUser is Pooraf)
+  // Admin Auth
   const [isAdmin, setIsAdmin] = useState<boolean>(() => {
-    if (currentUser?.username && currentUser.username.toLowerCase() === 'pooraf') {
-      return true;
-    }
-    return false;
+    return currentUser?.username?.toLowerCase() === 'pooraf';
   });
 
-  // Sync currentUser with admin status and fetch latest watched progress from Firestore
   useEffect(() => {
     if (currentUser?.username) {
       const cleanUsername = currentUser.username.toLowerCase();
-      
-      // Sole admin check
-      if (cleanUsername === 'pooraf') {
-        setIsAdmin(true);
-      } else {
-        setIsAdmin(false);
-      }
+      setIsAdmin(cleanUsername === 'pooraf');
 
-      // Fetch user's watch progress from Firestore for multi-device sync
       const userDocRef = doc(db, 'users', cleanUsername);
       getDoc(userDocRef)
         .then((docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
             if (Array.isArray(data.watchedIds)) {
-              setWatchedIds(new Set(data.watchedIds));
+              setWatchedMcuIds(new Set(data.watchedIds));
+            }
+            if (Array.isArray(data.watchedSwIds)) {
+              setWatchedSwIds(new Set(data.watchedSwIds));
             }
           }
         })
-        .catch((err) => {
-          console.error('Error fetching user progress from Firestore:', err);
-        });
+        .catch((err) => console.error('Error fetching Firestore progress:', err));
     } else {
       setIsAdmin(false);
     }
@@ -152,55 +206,41 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Modal
   const [selectedItem, setSelectedItem] = useState<MCUItem | null>(null);
 
-  // Save items on change
+  // ذخیره لوکال دیتای مارول
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(items));
-  }, [items]);
+    localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(mcuItems));
+  }, [mcuItems]);
 
-  // Save watched status on change & Sync to Firestore if logged in
+  // ذخیره پیشرفت تماشا
   useEffect(() => {
-    const watchedArray = Array.from(watchedIds);
-    localStorage.setItem(STORAGE_KEYS.WATCHED, JSON.stringify(watchedArray));
+    const mcuArray = Array.from(watchedMcuIds);
+    const swArray = Array.from(watchedSwIds);
+
+    localStorage.setItem(STORAGE_KEYS.WATCHED_MCU, JSON.stringify(mcuArray));
+    localStorage.setItem(STORAGE_KEYS.WATCHED_SW, JSON.stringify(swArray));
 
     if (currentUser?.username) {
       const cleanUsername = currentUser.username.toLowerCase();
       const userDocRef = doc(db, 'users', cleanUsername);
-      const watchedDocRef = doc(db, 'userWatchedItems', cleanUsername);
 
-      const updateData = async () => {
-        try {
-          await setDoc(
-            userDocRef,
-            {
-              watchedCount: watchedArray.length,
-              watchedIds: watchedArray,
-              lastLoginAt: new Date().toISOString()
-            },
-            { merge: true }
-          );
-          await setDoc(
-            watchedDocRef,
-            {
-              username: currentUser.username,
-              watchedIds: watchedArray,
-              updatedAt: new Date().toISOString()
-            },
-            { merge: true }
-          );
-        } catch (err) {
-          console.error('Error syncing watched state:', err);
-        }
-      };
-      updateData();
+      setDoc(
+        userDocRef,
+        {
+          watchedMcuCount: mcuArray.length,
+          watchedSwCount: swArray.length,
+          watchedIds: mcuArray,
+          watchedSwIds: swArray,
+          lastLoginAt: new Date().toISOString()
+        },
+        { merge: true }
+      ).catch((err) => console.error('Error syncing progress:', err));
     }
-  }, [watchedIds, currentUser]);
+  }, [watchedMcuIds, watchedSwIds, currentUser]);
 
-  // Save admin auth
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.ADMIN_AUTH, String(isAdmin));
   }, [isAdmin]);
 
-  // Save current user to localStorage
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
@@ -209,7 +249,7 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [currentUser]);
 
-  // --- USER FIREBASE AUTH METHODS ---
+  // متدهای احراز هویت
   const registerUser = async (username: string, password: string) => {
     const cleanUsername = username.trim().toLowerCase();
     const userDocRef = doc(db, 'users', cleanUsername);
@@ -226,22 +266,15 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         password: password.trim(),
         registeredAt: nowIso,
         lastLoginAt: nowIso,
-        watchedCount: watchedIds.size,
-        watchedIds: Array.from(watchedIds)
+        watchedMcuCount: watchedMcuIds.size,
+        watchedSwCount: watchedSwIds.size,
+        watchedIds: Array.from(watchedMcuIds),
+        watchedSwIds: Array.from(watchedSwIds)
       };
 
       await setDoc(userDocRef, userData);
-
-      // Also create watched item document
-      const watchedDocRef = doc(db, 'userWatchedItems', cleanUsername);
-      await setDoc(watchedDocRef, {
-        username: username.trim(),
-        watchedIds: Array.from(watchedIds),
-        updatedAt: nowIso
-      });
-
       setCurrentUser({ username: username.trim() });
-      return { success: true, message: 'حساب کاربری با موفقیت ساخته شد و در دیتابیس ثبت گردید.' };
+      return { success: true, message: 'حساب کاربری با موفقیت ساخته شد.' };
     } catch (err: any) {
       return { success: false, message: 'خطا در ثبت نام: ' + (err?.message || 'مشکل در دیتابیس') };
     }
@@ -254,7 +287,7 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     try {
       const docSnap = await getDoc(userDocRef);
       if (!docSnap.exists()) {
-        return { success: false, message: 'کاربری با این نام کاربری یافت نشد. لطفاً ابتدا ثبت‌نام کنید.' };
+        return { success: false, message: 'کاربری با این نام یافت نشد. لطفاً ابتدا ثبت‌نام کنید.' };
       }
 
       const userData = docSnap.data();
@@ -262,58 +295,54 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return { success: false, message: 'رمز عبور وارد شده اشتباه است.' };
       }
 
-      // Update last login
       const nowIso = new Date().toISOString();
-      await setDoc(
-        userDocRef,
-        {
-          lastLoginAt: nowIso
-        },
-        { merge: true }
-      );
+      await setDoc(userDocRef, { lastLoginAt: nowIso }, { merge: true });
 
-      // Load user's saved watched IDs from Firestore
       if (Array.isArray(userData.watchedIds)) {
-        setWatchedIds(new Set(userData.watchedIds));
+        setWatchedMcuIds(new Set(userData.watchedIds));
+      }
+      if (Array.isArray(userData.watchedSwIds)) {
+        setWatchedSwIds(new Set(userData.watchedSwIds));
       }
 
       setCurrentUser({ username: userData.username || username.trim() });
       return { success: true, message: 'ورود با موفقیت انجام شد.' };
     } catch (err: any) {
-      return { success: false, message: 'خطا در ورود: ' + (err?.message || 'مشکل در ارتباط با دیتابیس') };
+      return { success: false, message: 'خطا در ورود: ' + (err?.message || 'مشکل در دیتابیس') };
     }
   };
 
   const logoutUser = () => {
     setCurrentUser(null);
     setIsAdmin(false);
-    setWatchedIds(new Set());
+    setWatchedMcuIds(new Set());
+    setWatchedSwIds(new Set());
   };
 
-  // Toggle single item watched
   const toggleWatched = (id: string) => {
-    setWatchedIds((prev) => {
+    const updater = (prev: Set<string>) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
-    });
+    };
+
+    if (universe === 'mcu') setWatchedMcuIds(updater);
+    else setWatchedSwIds(updater);
   };
 
-  // Mark entire era as watched
   const markEraAsWatched = (eraId: string) => {
     const eraItemIds = items.filter((item) => item.eraId === eraId).map((item) => item.id);
-    setWatchedIds((prev) => {
+    const updater = (prev: Set<string>) => {
       const next = new Set(prev);
       eraItemIds.forEach((id) => next.add(id));
       return next;
-    });
+    };
+
+    if (universe === 'mcu') setWatchedMcuIds(updater);
+    else setWatchedSwIds(updater);
   };
 
-  // Admin login simulation
   const loginAdmin = (password: string): boolean => {
     if (password === 'admin' || password === '123456' || password === 'doomsday') {
       setIsAdmin(true);
@@ -322,59 +351,50 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return false;
   };
 
-  const logoutAdmin = () => {
-    setIsAdmin(false);
-  };
+  const logoutAdmin = () => setIsAdmin(false);
 
-  // Admin CRUD
   const addItem = (newItemData: Omit<MCUItem, 'id' | 'chronoOrder'>) => {
-    const nextOrder = items.length > 0 ? Math.max(...items.map((i) => i.chronoOrder)) + 1 : 1;
+    const nextOrder = mcuItems.length > 0 ? Math.max(...mcuItems.map((i) => i.chronoOrder)) + 1 : 1;
     const newItem: MCUItem = {
       ...newItemData,
       id: `mcu-item-${Date.now()}`,
       chronoOrder: nextOrder
     };
-    setItems((prev) => [...prev, newItem].sort((a, b) => a.chronoOrder - b.chronoOrder));
+    setMcuItems((prev) => [...prev, newItem].sort((a, b) => a.chronoOrder - b.chronoOrder));
   };
 
   const updateItem = (id: string, updated: Partial<MCUItem>) => {
-    setItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...updated } : item))
-    );
+    setMcuItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...updated } : item)));
     if (selectedItem?.id === id) {
       setSelectedItem((prev) => (prev ? { ...prev, ...updated } : null));
     }
   };
 
   const deleteItem = (id: string) => {
-    setItems((prev) => prev.filter((item) => item.id !== id));
-    setWatchedIds((prev) => {
+    setMcuItems((prev) => prev.filter((item) => item.id !== id));
+    setWatchedMcuIds((prev) => {
       const next = new Set(prev);
       next.delete(id);
       return next;
     });
-    if (selectedItem?.id === id) {
-      setSelectedItem(null);
-    }
+    if (selectedItem?.id === id) setSelectedItem(null);
   };
 
   const resetToDefaultData = () => {
-    setItems(INITIAL_MCU_ITEMS);
-    setWatchedIds(new Set());
+    setMcuItems(INITIAL_MCU_ITEMS);
+    setWatchedMcuIds(new Set());
+    setWatchedSwIds(new Set());
     localStorage.removeItem(STORAGE_KEYS.ITEMS);
-    localStorage.removeItem(STORAGE_KEYS.WATCHED);
+    localStorage.removeItem(STORAGE_KEYS.WATCHED_MCU);
+    localStorage.removeItem(STORAGE_KEYS.WATCHED_SW);
   };
 
-  // Computations
+  // محاسبات آمار
   const totalItemsCount = items.length;
   const watchedCount = items.filter((item) => watchedIds.has(item.id)).length;
   const essentialCount = items.filter((item) => item.isEssential).length;
-  const essentialWatchedCount = items.filter(
-    (item) => item.isEssential && watchedIds.has(item.id)
-  ).length;
-
+  const essentialWatchedCount = items.filter((item) => item.isEssential && watchedIds.has(item.id)).length;
   const progressPercentage = totalItemsCount > 0 ? Math.round((watchedCount / totalItemsCount) * 100) : 0;
-
   const totalWatchedRuntimeMinutes = items
     .filter((item) => watchedIds.has(item.id))
     .reduce((sum, item) => sum + (item.runtimeMinutes || 0), 0);
@@ -382,6 +402,8 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   return (
     <TimelineContext.Provider
       value={{
+        universe,
+        setUniverse,
         items,
         eras,
         watchedIds,
