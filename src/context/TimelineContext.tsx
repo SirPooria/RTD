@@ -249,13 +249,22 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [currentUser]);
 
-  // متدهای احراز هویت
+// متد کمکی برای جلوگیری از فریز شدن ریکوئست‌های فایراستور
+  const fetchDocWithTimeout = async (docRef: any, timeoutMs = 7000) => {
+    return Promise.race([
+      getDoc(docRef),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), timeoutMs)
+      )
+    ]);
+  };
+
   const registerUser = async (username: string, password: string) => {
     const cleanUsername = username.trim().toLowerCase();
     const userDocRef = doc(db, 'users', cleanUsername);
 
     try {
-      const docSnap = await getDoc(userDocRef);
+      const docSnap: any = await fetchDocWithTimeout(userDocRef);
       if (docSnap.exists()) {
         return { success: false, message: 'این نام کاربری قبلاً در دیتابیس ثبت شده است.' };
       }
@@ -276,7 +285,14 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setCurrentUser({ username: username.trim() });
       return { success: true, message: 'حساب کاربری با موفقیت ساخته شد.' };
     } catch (err: any) {
-      return { success: false, message: 'خطا در ثبت نام: ' + (err?.message || 'مشکل در دیتابیس') };
+      const errMsg = (err?.message || '').toLowerCase();
+      if (errMsg.includes('offline') || errMsg.includes('timeout') || errMsg.includes('unavailable')) {
+        return { 
+          success: false, 
+          message: 'ارتباط با سرور برقرار نشد. لطفاً وضعیت VPN یا اینترنت خود را چک کرده و دوباره دکمه ثبت‌نام را بزنید.' 
+        };
+      }
+      return { success: false, message: 'خطا در ثبت نام: ' + (err?.message || 'مشکل در برقراری ارتباط') };
     }
   };
 
@@ -285,7 +301,7 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const userDocRef = doc(db, 'users', cleanUsername);
 
     try {
-      const docSnap = await getDoc(userDocRef);
+      const docSnap: any = await fetchDocWithTimeout(userDocRef);
       if (!docSnap.exists()) {
         return { success: false, message: 'کاربری با این نام یافت نشد. لطفاً ابتدا ثبت‌نام کنید.' };
       }
@@ -308,7 +324,14 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setCurrentUser({ username: userData.username || username.trim() });
       return { success: true, message: 'ورود با موفقیت انجام شد.' };
     } catch (err: any) {
-      return { success: false, message: 'خطا در ورود: ' + (err?.message || 'مشکل در دیتابیس') };
+      const errMsg = (err?.message || '').toLowerCase();
+      if (errMsg.includes('offline') || errMsg.includes('timeout') || errMsg.includes('unavailable')) {
+        return { 
+          success: false, 
+          message: 'ارتباط با سرور برقرار نشد. لطفاً وضعیت VPN یا اینترنت خود را چک کرده و دوباره تلاش کنید.' 
+        };
+      }
+      return { success: false, message: 'خطا در ورود: ' + (err?.message || 'مشکل در برقراری ارتباط') };
     }
   };
 

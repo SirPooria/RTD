@@ -68,7 +68,18 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
         }
       }
     } catch (err: any) {
-      setErrorMsg('خطایی رخ داد: ' + (err?.message || 'مشکل در برقراری ارتباط'));
+      // لاگ کردن ارور برای دیباگ خودت
+      console.error("Auth Error:", err);
+      
+      const errorMessage = err?.message || '';
+      
+      if (errorMessage.toLowerCase().includes('offline') || errorMessage.toLowerCase().includes('network')) {
+        setErrorMsg('ارتباط با سرور قطع شد. لطفاً اینترنت یا VPN خود را بررسی کرده و مجدداً تلاش کنید.');
+      } else if (errorMessage.includes('already-exists')) {
+        setErrorMsg('این نام کاربری قبلاً ثبت شده است.');
+      } else {
+        setErrorMsg('خطایی رخ داد. لطفاً چند لحظه دیگر امتحان کنید.');
+      }
     } finally {
       setLoading(false);
     }
