@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { TimelineProvider } from './context/TimelineContext';
 import { Navbar } from './components/Navbar';
 import { TimelineView } from './components/TimelineView';
 import { AdminDashboard } from './components/AdminDashboard';
 import { MovieDetailModal } from './components/MovieDetailModal';
+import { PhoneVerificationModal } from './components/PhoneVerificationModal';
+import { Analytics } from '@vercel/analytics/react';
 import { Footer } from './components/Footer';
 
 export default function App() {
@@ -17,9 +19,10 @@ export default function App() {
         <main className="flex-1">
           {currentView === 'timeline' ? <TimelineView /> : <AdminDashboard />}
         </main>
-
         <MovieDetailModal />
+        <PhoneVerificationModal />
         <Footer />
+        <Analytics />
       </div>
     </TimelineProvider>
   );

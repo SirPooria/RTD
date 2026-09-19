@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/sms/:path*",
+      "destination": "https://api.payamak-panel.com/:path*"
+    }
+  ]
+}

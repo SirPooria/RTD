@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useTimeline } from '../context/TimelineContext';
-import { MCUItem, RegisteredUser } from '../types';
+import { MCUItem } from '../types';
 import { toPersianDigits } from './MovieCard';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
@@ -29,15 +29,32 @@ import {
   Search,
   UserCheck,
   Calendar,
-  Clock,
-  Key,
   Film,
   Sparkles,
   Save,
   X,
   CheckCircle2,
-  RefreshCw
+  Phone,
+  Download,
+  ChevronLeft,
+  ChevronRight,
+  Trophy,
+  Star
 } from 'lucide-react';
+
+interface AdminUser {
+  id: string;
+  username: string;
+  phoneNumber?: string;
+  phoneVerified?: boolean;
+  registeredAt: string;
+  lastLoginAt: string;
+  watchedMcuCount: number;
+  watchedSwCount: number;
+  watchedTotalCount: number;
+  watchedIds: string[];
+  watchedSwIds: string[];
+}
 
 export const AdminDashboard: React.FC = () => {
   const {
@@ -55,13 +72,18 @@ export const AdminDashboard: React.FC = () => {
   const [passInput, setPassInput] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  // Firestore Real-time Users State
-  const [registeredUsers, setRegisteredUsers] = useState<RegisteredUser[]>([]);
+  // دیتابیس زنده فایربیس
+  const [registeredUsers, setRegisteredUsers] = useState<AdminUser[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [userSearchTerm, setUserSearchTerm] = useState('');
-  const [selectedUserDetail, setSelectedUserDetail] = useState<RegisteredUser | null>(null);
+  const [phoneFilter, setPhoneFilter] = useState<'all' | 'withPhone' | 'noPhone'>('all');
+  const [selectedUserDetail, setSelectedUserDetail] = useState<AdminUser | null>(null);
 
-  // Form State for Adding / Editing Movies
+  // صفحه‌بندی
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 15;
+
+  // فرم افزودن/ویرایش فیلم
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Omit<MCUItem, 'id' | 'chronoOrder'>>({
     titleFa: '',
@@ -78,7 +100,6 @@ export const AdminDashboard: React.FC = () => {
     posterUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&w=600&q=80'
   });
 
-  // Real-time Firestore Listener for registered users
   useEffect(() => {
     if (!isAdmin) return;
 
@@ -88,21 +109,30 @@ export const AdminDashboard: React.FC = () => {
     const unsubscribe = onSnapshot(
       usersColRef,
       (snapshot) => {
-        const usersList: RegisteredUser[] = [];
+        const usersList: AdminUser[] = [];
         snapshot.forEach((docSnap) => {
           const data = docSnap.data();
+          const mcuIds = Array.isArray(data.watchedIds) ? data.watchedIds : [];
+          const swIds = Array.isArray(data.watchedSwIds) ? data.watchedSwIds : [];
+          const mcuCount = mcuIds.length || data.watchedMcuCount || (data.watchedCount || 0);
+          const swCount = swIds.length || data.watchedSwCount || 0;
+
           usersList.push({
             id: docSnap.id,
             username: data.username || docSnap.id,
-            password: data.password || '—',
+            phoneNumber: data.phoneNumber || '',
+            phoneVerified: Boolean(data.phoneVerified),
             registeredAt: data.registeredAt || new Date().toISOString(),
             lastLoginAt: data.lastLoginAt || data.registeredAt || new Date().toISOString(),
-            watchedCount: data.watchedCount || 0,
-            watchedIds: data.watchedIds || []
+            watchedMcuCount: mcuCount,
+            watchedSwCount: swCount,
+            watchedTotalCount: mcuCount + swCount,
+            watchedIds: mcuIds,
+            watchedSwIds: swIds
           });
         });
 
-        // Sort users by registration date descending
+        // مرتب‌سازی بر اساس تاریخ ثبت نام
         usersList.sort((a, b) => new Date(b.registeredAt).getTime() - new Date(a.registeredAt).getTime());
         setRegisteredUsers(usersList);
         setLoadingUsers(false);
@@ -116,14 +146,65 @@ export const AdminDashboard: React.FC = () => {
     return () => unsubscribe();
   }, [isAdmin]);
 
-  const handleDeleteUser = async (userId: string, username: string) => {
-    if (!window.confirm(`آیا از حذف کاربر "${username}" از دیتابیس اطمینان دارید؟`)) {
+  // فیلتر کردن کاربران
+  const filteredUsers = useMemo(() => {
+    return registeredUsers.filter((u) => {
+      const matchSearch =
+        u.username.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
+        (u.phoneNumber && u.phoneNumber.includes(userSearchTerm));
+      
+      if (phoneFilter === 'withPhone') return matchSearch && Boolean(u.phoneNumber);
+      if (phoneFilter === 'noPhone') return matchSearch && !u.phoneNumber;
+      return matchSearch;
+    });
+  }, [registeredUsers, userSearchTerm, phoneFilter]);
+
+  // کاربران صفحه جاری
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / itemsPerPage));
+  const paginatedUsers = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredUsers.slice(start, start + itemsPerPage);
+  }, [filteredUsers, currentPage]);
+
+  // کاربران برتر (بیشترین تماشا)
+  const topUsers = useMemo(() => {
+    return [...registeredUsers]
+      .sort((a, b) => b.watchedTotalCount - a.watchedTotalCount)
+      .slice(0, 5);
+  }, [registeredUsers]);
+
+  // آمار کلیدی
+  const usersWithPhoneCount = registeredUsers.filter((u) => u.phoneNumber).length;
+  const totalMcuWatched = registeredUsers.reduce((sum, u) => sum + u.watchedMcuCount, 0);
+  const totalSwWatched = registeredUsers.reduce((sum, u) => sum + u.watchedSwCount, 0);
+
+  // خروجی CSV شماره‌ها برای بینجر
+  const handleExportCSV = () => {
+    const list = registeredUsers.filter((u) => u.phoneNumber);
+    if (list.length === 0) {
+      alert('هنوز هیچ کاربری شماره تلفن خود را ثبت نکرده است.');
       return;
     }
+
+    let csv = '\uFEFFنام کاربری,شماره موبایل,وضعیت تایید,تماشای مارول,تماشای استاروارز,مجموع عناوین,تاریخ ثبت نام\n';
+    list.forEach((u) => {
+      csv += `"${u.username}","${u.phoneNumber}","${u.phoneVerified ? 'تایید شده' : 'تایید نشده'}",${u.watchedMcuCount},${u.watchedSwCount},${u.watchedTotalCount},"${new Date(u.registeredAt).toLocaleDateString('fa-IR')}"\n`;
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `binger_phone_numbers_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleDeleteUser = async (userId: string, username: string) => {
+    if (!window.confirm(`آیا از حذف کاربر "${username}" اطمینان دارید؟`)) return;
     try {
       await deleteDoc(doc(db, 'users', userId));
-      // Optionally delete watched items doc
-      await deleteDoc(doc(db, 'userWatchedItems', userId));
     } catch (err: any) {
       alert('خطا در حذف کاربر: ' + err?.message);
     }
@@ -135,139 +216,72 @@ export const AdminDashboard: React.FC = () => {
       setLoginError('');
       setPassInput('');
     } else {
-      setLoginError('رمز عبور مدیر اشتباه است (رمزهای پیش‌فرض: admin یا doomsday یا 123456)');
+      setLoginError('رمز عبور مدیر اشتباه است');
     }
   };
-
-  const handleStartEdit = (item: MCUItem) => {
-    setEditingId(item.id);
-    setFormData({
-      titleFa: item.titleFa,
-      titleEn: item.titleEn,
-      releaseYear: item.releaseYear,
-      inUniverseYear: item.inUniverseYear,
-      runtimeMinutes: item.runtimeMinutes,
-      type: item.type,
-      rtScore: item.rtScore,
-      isEssential: item.isEssential,
-      eraId: item.eraId,
-      watchFor: item.watchFor,
-      tiesIn: item.tiesIn,
-      posterUrl: item.posterUrl
-    });
-  };
-
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setFormData({
-      titleFa: '',
-      titleEn: '',
-      releaseYear: 2024,
-      inUniverseYear: '~۲۰۲۴',
-      runtimeMinutes: 120,
-      type: 'movie',
-      rtScore: 85,
-      isEssential: true,
-      eraId: 'era-4',
-      watchFor: '',
-      tiesIn: '',
-      posterUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&w=600&q=80'
-    });
-  };
-
-  const handleFormSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.titleFa.trim()) return;
-
-    if (editingId) {
-      updateItem(editingId, formData);
-      setEditingId(null);
-    } else {
-      addItem(formData);
-    }
-
-    handleCancelEdit();
-  };
-
-  // Filtered Users
-  const filteredUsers = registeredUsers.filter((u) =>
-    u.username.toLowerCase().includes(userSearchTerm.toLowerCase())
-  );
-
-  const totalUserWatchedMovies = registeredUsers.reduce((sum, u) => sum + (u.watchedCount || 0), 0);
-
-  const pieData = [
-    { name: 'آثار حیاتی (سبز)', value: items.filter((i) => i.isEssential).length, color: '#10b981' },
-    { name: 'آثار جانبی (خاکستری)', value: items.filter((i) => !i.isEssential).length, color: '#64748b' }
-  ];
 
   if (!isAdmin) {
     return (
-      <div className="max-w-md mx-auto px-4 py-16">
+      <div className="max-w-md mx-auto px-4 py-16 text-right">
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 text-center shadow-2xl">
           <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-center mx-auto mb-4 text-emerald-400">
             <Lock className="w-8 h-8" />
           </div>
-          <h2 className="text-xl font-bold text-slate-100 mb-2">ورود به پنل مدیریت مسیر دومزدی</h2>
-          <p className="text-xs text-slate-400 mb-6">
-            برای مشاهده لیست کامل و دقیق کاربران ثبت‌شده در دیتابیس، رمز عبور و آمار به پنل مدیریت وارد شوید.
-          </p>
-
+          <h2 className="text-xl font-bold text-slate-100 mb-2">ورود به پنل مدیریت</h2>
+          <p className="text-xs text-slate-400 mb-6">برای مدیریت کاربران، شماره‌های ثبت‌شده و آمار وارد شوید.</p>
           <form onSubmit={handleLoginSubmit} className="space-y-4">
-            <div>
-              <input
-                type="password"
-                value={passInput}
-                onChange={(e) => setPassInput(e.target.value)}
-                placeholder="رمز عبور مدیر (مثال: admin یا doomsday)"
-                className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 text-center"
-              />
-            </div>
-
+            <input
+              type="password"
+              value={passInput}
+              onChange={(e) => setPassInput(e.target.value)}
+              placeholder="رمز عبور مدیر (مثال: admin یا doomsday)"
+              className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 text-center"
+            />
             {loginError && <div className="text-xs text-rose-400 font-semibold">{loginError}</div>}
-
             <button
               type="submit"
-              className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-colors shadow-lg shadow-emerald-500/20 cursor-pointer"
+              className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-colors cursor-pointer"
             >
               ورود به سیستم
             </button>
           </form>
-
-          <div className="mt-6 pt-4 border-t border-slate-800 text-[11px] text-emerald-400 flex items-center justify-center gap-1.5 font-medium">
-            <Database className="w-3.5 h-3.5" />
-            <span>متصل به پایگاه داده زنده Firebase Firestore</span>
-          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
-      {/* Admin Top Header */}
+    <div className="max-w-6xl mx-auto px-4 py-8 text-right">
+      {/* هدر مدیریت */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8 bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl">
         <div>
           <div className="flex items-center gap-2 text-emerald-400 text-xs font-semibold mb-1">
             <Shield className="w-4 h-4" />
-            <span>پنل مدیریت زنده پایگاه داده</span>
+            <span>داشبورد زنده کاربران و دیتابیس</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-100">
-            مدیریت کاربران و عناوین "مسیر دومزدی"
+            مدیریت کاربران و عناوین
           </h1>
         </div>
 
         <div className="flex items-center gap-3">
           <button
-            onClick={logoutAdmin}
-            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+            onClick={handleExportCSV}
+            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-colors shadow-lg shadow-emerald-900/30 cursor-pointer"
           >
-            خروج از حساب مدیر
+            <Download className="w-4 h-4" />
+            <span>دانلود شماره‌ها برای Binger</span>
+          </button>
+          <button
+            onClick={logoutAdmin}
+            className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+          >
+            خروج
           </button>
         </div>
       </div>
 
-      {/* Tabs Bar */}
+      {/* تب‌ها */}
       <div className="flex flex-wrap items-center gap-3 mb-8 border-b border-slate-800 pb-3">
         <button
           onClick={() => setActiveTab('users')}
@@ -278,7 +292,7 @@ export const AdminDashboard: React.FC = () => {
           }`}
         >
           <Users className="w-4 h-4" />
-          <span>لیست کاربران ثبت‌شده در دیتابیس ({toPersianDigits(registeredUsers.length)})</span>
+          <span>لیست کاربران ({toPersianDigits(registeredUsers.length)})</span>
         </button>
 
         <button
@@ -290,7 +304,7 @@ export const AdminDashboard: React.FC = () => {
           }`}
         >
           <BarChart3 className="w-4 h-4" />
-          <span>آمار و تحلیل کلی</span>
+          <span>آمار و لیدربورد</span>
         </button>
 
         <button
@@ -302,132 +316,145 @@ export const AdminDashboard: React.FC = () => {
           }`}
         >
           <Database className="w-4 h-4" />
-          <span>مدیریت فیلم‌ها و سریال‌ها ({toPersianDigits(items.length)})</span>
+          <span>عناوین و آثار ({toPersianDigits(items.length)})</span>
         </button>
       </div>
 
-      {/* TAB 1: REGISTERED USERS LIST & FIRESTORE LIVE DATA */}
+      {/* تب ۱: جدول کاربران */}
       {activeTab === 'users' && (
         <div className="space-y-6">
-          {/* Top Quick Stats Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* کارت‌های آماری */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-slate-400">تعداد کل کاربران ثبت‌شده</span>
-                <Users className="w-5 h-5 text-emerald-400" />
-              </div>
+              <span className="text-xs text-slate-400 block mb-1">کل کاربران ثبت‌شده</span>
+              <div className="text-3xl font-black text-white font-mono">{toPersianDigits(registeredUsers.length)}</div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
+              <span className="text-xs text-slate-400 block mb-1">کاربران با شماره تماس</span>
               <div className="text-3xl font-black text-emerald-400 font-mono">
-                {toPersianDigits(registeredUsers.length)}
+                {toPersianDigits(usersWithPhoneCount)}
               </div>
-              <div className="text-[11px] text-slate-400 mt-1">اطلاعات زنده از دیتابیس Firestore</div>
+              <span className="text-[11px] text-slate-500 mt-1 block">
+                {registeredUsers.length > 0 ? toPersianDigits(Math.round((usersWithPhoneCount / registeredUsers.length) * 100)) : 0}٪ کل کاربران
+              </span>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-slate-400">مجموع فیلم‌های علامت‌زده‌شده</span>
-                <Film className="w-5 h-5 text-emerald-400" />
-              </div>
-              <div className="text-3xl font-black text-slate-100 font-mono">
-                {toPersianDigits(totalUserWatchedMovies)}
-              </div>
-              <div className="text-[11px] text-slate-400 mt-1">توسط کاربران واقعی سیستم</div>
+              <span className="text-xs text-slate-400 block mb-1">مجموع تماشای مارول</span>
+              <div className="text-3xl font-black text-red-400 font-mono">{toPersianDigits(totalMcuWatched)}</div>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-slate-400">وضعیت پایگاه داده</span>
-                <Database className="w-5 h-5 text-emerald-400 animate-pulse" />
-              </div>
-              <div className="text-lg font-bold text-emerald-400">فعال و آنلاین</div>
-              <div className="text-[11px] text-slate-400 mt-1">همگام‌سازی لحظه‌ای بدون ماک</div>
+              <span className="text-xs text-slate-400 block mb-1">مجموع تماشای استاروارز</span>
+              <div className="text-3xl font-black text-cyan-400 font-mono">{toPersianDigits(totalSwWatched)}</div>
             </div>
           </div>
 
-          {/* User List Table Card */}
+          {/* جدول اصلی کاربران */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-              <div>
-                <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-                  <UserCheck className="w-5 h-5 text-emerald-400" />
-                  <span>اطلاعات کامل و دقیق کاربران (نام کاربری، رمز عبور، آمار)</span>
-                </h3>
-                <p className="text-xs text-slate-400 mt-1">
-                  تمام اطلاعات ورود کاربر هنگام ثبت‌نام به طور مستقیم در دیتابیس ذخیره شده و در اینجا قابل دریافت است.
-                </p>
+              {/* فیلترها و سرچ */}
+              <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+                <div className="relative w-full sm:w-64">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <input
+                    type="text"
+                    value={userSearchTerm}
+                    onChange={(e) => {
+                      setUserSearchTerm(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    placeholder="جستجوی نام یا شماره..."
+                    className="w-full pr-9 pl-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+                  <button
+                    onClick={() => { setPhoneFilter('all'); setCurrentPage(1); }}
+                    className={`px-3 py-1.5 rounded-lg font-medium transition-all ${phoneFilter === 'all' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}
+                  >
+                    همه
+                  </button>
+                  <button
+                    onClick={() => { setPhoneFilter('withPhone'); setCurrentPage(1); }}
+                    className={`px-3 py-1.5 rounded-lg font-medium transition-all ${phoneFilter === 'withPhone' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}
+                  >
+                    دارای شماره
+                  </button>
+                  <button
+                    onClick={() => { setPhoneFilter('noPhone'); setCurrentPage(1); }}
+                    className={`px-3 py-1.5 rounded-lg font-medium transition-all ${phoneFilter === 'noPhone' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}
+                  >
+                    بدون شماره
+                  </button>
+                </div>
               </div>
 
-              {/* User Search Input */}
-              <div className="relative w-full sm:w-64">
-                <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                <input
-                  type="text"
-                  value={userSearchTerm}
-                  onChange={(e) => setUserSearchTerm(e.target.value)}
-                  placeholder="جستجوی نام کاربری..."
-                  className="w-full pr-9 pl-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
-                />
+              <div className="text-xs text-slate-400">
+                نمایش {toPersianDigits(paginatedUsers.length)} از {toPersianDigits(filteredUsers.length)} کاربر
               </div>
             </div>
 
             {loadingUsers ? (
               <div className="text-center py-12 text-slate-400 text-xs animate-pulse">
-                در حال دریافت اطلاعات زنده کاربران از دیتابیس...
+                در حال لود کاربران...
               </div>
-            ) : filteredUsers.length === 0 ? (
-              <div className="text-center py-12 text-slate-500 text-xs">
-                {registeredUsers.length === 0
-                  ? 'هنوز هیچ کاربری ثبت‌نام نکرده است. با فرم ورود/ثبت‌نام یک کاربر جدید بسازید.'
-                  : 'کاربری با این مشخصات یافت نشد.'}
-              </div>
+            ) : paginatedUsers.length === 0 ? (
+              <div className="text-center py-12 text-slate-500 text-xs">کاربری یافت نشد.</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-right text-xs">
                   <thead className="bg-slate-950 text-slate-400 font-bold border-b border-slate-800">
                     <tr>
                       <th className="p-3">#</th>
-                      <th className="p-3">نام کاربری (Username)</th>
-                      <th className="p-3">رمز عبور (Password)</th>
+                      <th className="p-3">نام کاربری</th>
+                      <th className="p-3">شماره تماس (جهت انتقال به Binger)</th>
+                      <th className="p-3">مارول</th>
+                      <th className="p-3">استاروارز</th>
+                      <th className="p-3">مجموع تماشا</th>
                       <th className="p-3">تاریخ ثبت‌نام</th>
-                      <th className="p-3">آخرین ورود</th>
-                      <th className="p-3">آمار دیده‌شده</th>
                       <th className="p-3 text-center">عملیات</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                    {filteredUsers.map((user, idx) => (
+                    {paginatedUsers.map((user, idx) => (
                       <tr key={user.id} className="hover:bg-slate-800/40 transition-colors">
-                        <td className="p-3 text-slate-500 font-mono">{toPersianDigits(idx + 1)}</td>
+                        <td className="p-3 text-slate-500 font-mono">
+                          {toPersianDigits((currentPage - 1) * itemsPerPage + idx + 1)}
+                        </td>
                         <td className="p-3 font-bold text-emerald-400 font-mono dir-ltr text-right">
                           @{user.username}
                         </td>
-                        <td className="p-3 font-mono text-slate-200 bg-slate-950/60 px-2 py-1 rounded border border-slate-800/80 inline-block my-2">
-                          <span className="flex items-center gap-1">
-                            <Key className="w-3 h-3 text-amber-400 shrink-0" />
-                            {user.password}
-                          </span>
+                        <td className="p-3 font-mono">
+                          {user.phoneNumber ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-lg font-bold">
+                              <Phone className="w-3 h-3" />
+                              <span dir="ltr">{user.phoneNumber}</span>
+                            </span>
+                          ) : (
+                            <span className="text-slate-500 italic text-[11px]">ثبت نشده</span>
+                          )}
                         </td>
+                        <td className="p-3 text-slate-300 font-mono">{toPersianDigits(user.watchedMcuCount)}</td>
+                        <td className="p-3 text-slate-300 font-mono">{toPersianDigits(user.watchedSwCount)}</td>
+                        <td className="p-3 font-bold text-white font-mono">{toPersianDigits(user.watchedTotalCount)}</td>
                         <td className="p-3 text-slate-400 text-[11px]">
-                          {new Date(user.registeredAt).toLocaleDateString('fa-IR')} -{' '}
-                          {new Date(user.registeredAt).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}
-                        </td>
-                        <td className="p-3 text-slate-400 text-[11px]">
-                          {new Date(user.lastLoginAt).toLocaleDateString('fa-IR')}
-                        </td>
-                        <td className="p-3 font-bold text-slate-100 font-mono">
-                          {toPersianDigits(user.watchedCount || 0)} فیلم
+                          {new Date(user.registeredAt).toLocaleDateString('fa-IR')}
                         </td>
                         <td className="p-3 text-center flex items-center justify-center gap-1.5">
                           <button
                             onClick={() => setSelectedUserDetail(user)}
                             className="p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg transition-colors cursor-pointer"
-                            title="مشاهده جزئیات آمار و فیلم‌های دیده‌شده کاربر"
+                            title="جزئیات کامل"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDeleteUser(user.id, user.username)}
                             className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg transition-colors cursor-pointer"
-                            title="حذف کاربر از دیتابیس"
+                            title="حذف"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -438,52 +465,88 @@ export const AdminDashboard: React.FC = () => {
                 </table>
               </div>
             )}
+
+            {/* نوار صفحه‌بندی (Pagination) */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between border-t border-slate-800 pt-4 mt-6">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:border-slate-700 cursor-pointer"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                  <span>صفحه قبلی</span>
+                </button>
+
+                <div className="text-xs text-slate-400">
+                  صفحه {toPersianDigits(currentPage)} از {toPersianDigits(totalPages)}
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:border-slate-700 cursor-pointer"
+                >
+                  <span>صفحه بعدی</span>
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* TAB 2: DASHBOARD STATS */}
+      {/* تب ۲: آمار و لیدربورد کاربران برتر */}
       {activeTab === 'dashboard' && (
-        <div className="space-y-8">
-          {/* Top Stat Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-              <div className="text-xs text-slate-400 mb-1">تعداد کاربران دیتابیس</div>
-              <div className="text-2xl font-black text-emerald-400 font-mono">
-                {toPersianDigits(registeredUsers.length)}
-              </div>
-              <div className="text-[11px] text-emerald-500/80 mt-1">ثبت‌شده در Firestore</div>
-            </div>
+        <div className="space-y-6">
+          {/* لیدربورد کاربران برتر */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl">
+            <h3 className="text-base font-bold text-slate-100 mb-4 flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-amber-400" />
+              <span>کاربران با بیشترین تعداد تماشا (پرفشارترین کاربرها)</span>
+            </h3>
 
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-              <div className="text-xs text-slate-400 mb-1">کل عناوین تایم‌لاین</div>
-              <div className="text-2xl font-black text-slate-100 font-mono">
-                {toPersianDigits(items.length)}
-              </div>
-              <div className="text-[11px] text-slate-400 mt-1">فیلم‌ها و سریال‌های استاتیک</div>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-              <div className="text-xs text-slate-400 mb-1">عناوین حیاتی (سبز)</div>
-              <div className="text-2xl font-black text-emerald-400 font-mono">
-                {toPersianDigits(items.filter((i) => i.isEssential).length)}
-              </div>
-              <div className="text-[11px] text-slate-400 mt-1">مسیر اصلی دومزدی</div>
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
+              {topUsers.map((user, idx) => (
+                <div
+                  key={user.id}
+                  className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex flex-col justify-between relative overflow-hidden"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs">
+                      {toPersianDigits(idx + 1)}
+                    </span>
+                    {idx === 0 && <Star className="w-4 h-4 text-amber-400 fill-amber-400" />}
+                  </div>
+                  <div className="font-bold text-sm text-slate-100 truncate mb-1" dir="ltr">
+                    @{user.username}
+                  </div>
+                  <div className="text-xs text-slate-400 mb-2">
+                    {user.phoneNumber ? user.phoneNumber : 'بدون شماره'}
+                  </div>
+                  <div className="text-lg font-black text-emerald-400 font-mono">
+                    {toPersianDigits(user.watchedTotalCount)} <span className="text-xs font-normal">عنوان</span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Pie Chart: Essential vs Optional Movies */}
+          {/* نسبت تماشای مارول به استاروارز */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
-            <h3 className="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2">
+            <h3 className="text-base font-bold text-slate-100 mb-4 flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-emerald-400" />
-              <span>نسبت آثار حیاتی در برابر آثار جانبی</span>
+              <span>محبوبیت کلی تماشا: مارول در برابر استاروارز</span>
             </h3>
 
             <div className="h-64 w-full flex items-center justify-center">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={pieData}
+                    data={[
+                      { name: 'مارول (Marvel)', value: totalMcuWatched, color: '#ef4444' },
+                      { name: 'استاروارز (Star Wars)', value: totalSwWatched, color: '#06b6d4' }
+                    ]}
                     cx="50%"
                     cy="50%"
                     innerRadius={60}
@@ -492,9 +555,8 @@ export const AdminDashboard: React.FC = () => {
                     dataKey="value"
                     label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                   >
-                    {pieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
+                    <Cell fill="#ef4444" />
+                    <Cell fill="#06b6d4" />
                   </Pie>
                   <Tooltip contentStyle={{ backgroundColor: '#020617', borderColor: '#334155', borderRadius: '12px' }} />
                 </PieChart>
@@ -504,341 +566,147 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 3: CONTENT MANAGEMENT (Movies CRUD) */}
+      {/* تب ۳: مدیریت فیلم‌ها و سریال‌ها */}
       {activeTab === 'content' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Add / Edit Form Column */}
           <div className="lg:col-span-1">
             <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sticky top-20 shadow-xl">
               <h3 className="text-base font-bold text-slate-100 mb-4 flex items-center gap-2">
                 {editingId ? <Edit className="w-5 h-5 text-amber-400" /> : <Plus className="w-5 h-5 text-emerald-400" />}
-                <span>{editingId ? 'ویرایش عنوان موجود' : 'افزودن فیلم یا سریال جدید'}</span>
+                <span>{editingId ? 'ویرایش عنوان' : 'افزودن فیلم/سریال جدید'}</span>
               </h3>
-
-              <form onSubmit={handleFormSubmit} className="space-y-4 text-xs">
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                if (!formData.titleFa.trim()) return;
+                if (editingId) {
+                  updateItem(editingId, formData);
+                  setEditingId(null);
+                } else {
+                  addItem(formData);
+                }
+                setFormData({
+                  titleFa: '',
+                  titleEn: '',
+                  releaseYear: 2024,
+                  inUniverseYear: '~۲۰۲۴',
+                  runtimeMinutes: 120,
+                  type: 'movie',
+                  rtScore: 85,
+                  isEssential: true,
+                  eraId: 'era-4',
+                  watchFor: '',
+                  tiesIn: '',
+                  posterUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&w=600&q=80'
+                });
+              }} className="space-y-4 text-xs">
                 <div>
                   <label className="block text-slate-400 mb-1">عنوان فارسی</label>
                   <input
                     type="text"
                     value={formData.titleFa}
                     onChange={(e) => setFormData({ ...formData, titleFa: e.target.value })}
-                    placeholder="مثال: چهار شگفت‌انگیز"
                     required
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
-
                 <div>
                   <label className="block text-slate-400 mb-1">عنوان انگلیسی</label>
                   <input
                     type="text"
                     value={formData.titleEn}
                     onChange={(e) => setFormData({ ...formData, titleEn: e.target.value })}
-                    placeholder="e.g. The Fantastic Four"
                     required
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-500 dir-ltr text-right"
                   />
                 </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-slate-400 mb-1">سال انتشار</label>
-                    <input
-                      type="number"
-                      value={formData.releaseYear}
-                      onChange={(e) => setFormData({ ...formData, releaseYear: Number(e.target.value) })}
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-400 mb-1">زمان در داستانی</label>
-                    <input
-                      type="text"
-                      value={formData.inUniverseYear}
-                      onChange={(e) => setFormData({ ...formData, inUniverseYear: e.target.value })}
-                      placeholder="مثال: ۲۰۲۶"
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-slate-400 mb-1">نوع اثر</label>
-                    <select
-                      value={formData.type}
-                      onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-500"
-                    >
-                      <option value="movie">فیلم سینمایی</option>
-                      <option value="series">سریال</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-400 mb-1">دوره زمانی (Era)</label>
-                    <select
-                      value={formData.eraId}
-                      onChange={(e) => setFormData({ ...formData, eraId: e.target.value })}
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-500"
-                    >
-                      {useTimeline().eras.map((era) => (
-                        <option key={era.id} value={era.id}>
-                          {era.titleFa.split(':')[0]}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 p-3 bg-slate-950 rounded-xl border border-slate-800">
-                  <input
-                    type="checkbox"
-                    id="isEssential"
-                    checked={formData.isEssential}
-                    onChange={(e) => setFormData({ ...formData, isEssential: e.target.checked })}
-                    className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
-                  />
-                  <label htmlFor="isEssential" className="text-slate-200 cursor-pointer font-bold">
-                    اثر حیاتی (سبز - مسیر اصلی دومزدی)
-                  </label>
-                </div>
-
-                <div>
-                  <label className="block text-slate-400 mb-1">علت تماشا (Watch For)</label>
-                  <textarea
-                    rows={2}
-                    value={formData.watchFor}
-                    onChange={(e) => setFormData({ ...formData, watchFor: e.target.value })}
-                    placeholder="نکات کلیدی برای تماشاگر..."
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-400 mb-1">ارتباط با Doomsday (Ties In)</label>
-                  <textarea
-                    rows={2}
-                    value={formData.tiesIn}
-                    onChange={(e) => setFormData({ ...formData, tiesIn: e.target.value })}
-                    placeholder="نحوه گره خوردن به روز رستاخیز..."
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                <div className="flex gap-2 pt-2">
-                  <button
-                    type="submit"
-                    className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    <Save className="w-4 h-4" />
-                    <span>{editingId ? 'ذخیره تغییرات' : 'افزودن به لیست'}</span>
-                  </button>
-
-                  {editingId && (
-                    <button
-                      type="button"
-                      onClick={handleCancelEdit}
-                      className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-colors cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
+                <button
+                  type="submit"
+                  className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl transition-colors cursor-pointer"
+                >
+                  {editingId ? 'ذخیره تغییرات' : 'افزودن عنوان'}
+                </button>
               </form>
             </div>
           </div>
 
-          {/* Existing Movies List Column */}
-          <div className="lg:col-span-2 space-y-4">
+          <div className="lg:col-span-2 space-y-3">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-base font-bold text-slate-100">فهرست کامل عناوین موجود</h3>
+              <h3 className="text-base font-bold text-slate-100">فهرست عناوین</h3>
               <button
                 onClick={resetToDefaultData}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-rose-400 border border-rose-500/20 text-xs font-bold rounded-xl transition-colors cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>بازنشانی به داده‌های پیش‌فرض</span>
+                <span>بازنشانی به پیش‌فرض</span>
               </button>
             </div>
-
-            <div className="space-y-3">
-              {items.map((item) => (
-                <div
-                  key={item.id}
-                  className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between gap-4 hover:border-slate-700 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={item.posterUrl}
-                      alt={item.titleFa}
-                      className="w-12 h-16 object-cover rounded-xl border border-slate-800 shrink-0"
-                    />
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`w-2.5 h-2.5 rounded-full ${
-                            item.isEssential ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]' : 'bg-slate-600'
-                          }`}
-                        />
-                        <h4 className="text-sm font-bold text-slate-100">{item.titleFa}</h4>
-                      </div>
-                      <p className="text-xs text-slate-400 dir-ltr text-right mt-0.5">{item.titleEn}</p>
-                      <span className="text-[10px] text-slate-500 mt-1 block">
-                        سال: {toPersianDigits(item.releaseYear)} | فرمت: {item.type === 'movie' ? 'فیلم' : 'سریال'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={() => handleStartEdit(item)}
-                      className="p-2 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-xl transition-colors cursor-pointer"
-                      title="ویرایش"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => deleteItem(item.id)}
-                      className="p-2 bg-slate-800 hover:bg-slate-700 text-rose-400 rounded-xl transition-colors cursor-pointer"
-                      title="حذف"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+            {items.map((item) => (
+              <div
+                key={item.id}
+                className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between gap-4"
+              >
+                <div className="flex items-center gap-3">
+                  <img src={item.posterUrl} alt="" className="w-12 h-16 object-cover rounded-xl border border-slate-800" />
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-100">{item.titleFa}</h4>
+                    <p className="text-xs text-slate-400 dir-ltr text-right">{item.titleEn}</p>
                   </div>
                 </div>
-              ))}
-            </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => deleteItem(item.id)}
+                    className="p-2 bg-slate-800 hover:bg-slate-700 text-rose-400 rounded-xl transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* User Detail Inspection Modal */}
+      {/* مدال جزئیات کاربر */}
       {selectedUserDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
-          <div className="relative w-full max-w-2xl max-h-[85vh] bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl overflow-y-auto">
-            {/* Modal Header */}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="relative w-full max-w-xl bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl">
             <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-6">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-                  <UserCheck className="w-6 h-6" />
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                  <UserCheck className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-                    <span>حساب کاربر:</span>
-                    <span className="text-emerald-400 font-mono dir-ltr">@{selectedUserDetail.username}</span>
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">ثبت‌شده در دیتابیس Firestore پروژه</p>
+                  <h3 className="text-base font-bold text-white" dir="ltr">@{selectedUserDetail.username}</h3>
+                  <p className="text-xs text-slate-400">{selectedUserDetail.phoneNumber || 'بدون شماره تماس'}</p>
                 </div>
               </div>
-
               <button
                 onClick={() => setSelectedUserDetail(null)}
-                className="w-9 h-9 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition-colors cursor-pointer"
+                className="w-8 h-8 rounded-full bg-slate-800 text-slate-300 flex items-center justify-center cursor-pointer"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Quick Stats Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
-              <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
-                <span className="text-[11px] text-slate-400 block mb-1">رمز عبور کاربر</span>
-                <div className="text-sm font-mono font-bold text-amber-400 flex items-center gap-1.5">
-                  <Key className="w-3.5 h-3.5" />
-                  <span>{selectedUserDetail.password}</span>
-                </div>
+            <div className="grid grid-cols-3 gap-3 mb-6">
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center">
+                <span className="text-[10px] text-slate-500 block mb-1">مارول</span>
+                <span className="text-sm font-bold text-red-400 font-mono">{toPersianDigits(selectedUserDetail.watchedMcuCount)}</span>
               </div>
-
-              <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
-                <span className="text-[11px] text-slate-400 block mb-1">تاریخ ثبت‌نام</span>
-                <div className="text-xs text-slate-200 font-medium">
-                  {new Date(selectedUserDetail.registeredAt).toLocaleDateString('fa-IR')}
-                </div>
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center">
+                <span className="text-[10px] text-slate-500 block mb-1">استاروارز</span>
+                <span className="text-sm font-bold text-cyan-400 font-mono">{toPersianDigits(selectedUserDetail.watchedSwCount)}</span>
               </div>
-
-              <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
-                <span className="text-[11px] text-slate-400 block mb-1">آخرین فعالیت</span>
-                <div className="text-xs text-slate-200 font-medium">
-                  {new Date(selectedUserDetail.lastLoginAt).toLocaleDateString('fa-IR')}
-                </div>
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center">
+                <span className="text-[10px] text-slate-500 block mb-1">مجموع کل</span>
+                <span className="text-sm font-bold text-emerald-400 font-mono">{toPersianDigits(selectedUserDetail.watchedTotalCount)}</span>
               </div>
             </div>
 
-            {/* Watching Progress Bar */}
-            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-6">
-              <div className="flex items-center justify-between text-xs font-bold mb-2">
-                <span className="text-slate-300">میزان پیشرفت کاربر در تایم‌لاین</span>
-                <span className="text-emerald-400 font-mono">
-                  {toPersianDigits(selectedUserDetail.watchedCount || 0)} از {toPersianDigits(items.length)} فیلم (
-                  {toPersianDigits(
-                    items.length > 0
-                      ? Math.round(((selectedUserDetail.watchedCount || 0) / items.length) * 100)
-                      : 0
-                  )}
-                  ٪)
-                </span>
-              </div>
-
-              <div className="w-full bg-slate-900 rounded-full h-3 overflow-hidden p-0.5 border border-slate-800">
-                <div
-                  className="bg-gradient-to-r from-emerald-600 to-emerald-400 h-full rounded-full transition-all duration-500"
-                  style={{
-                    width: `${
-                      items.length > 0
-                        ? Math.min(100, Math.round(((selectedUserDetail.watchedCount || 0) / items.length) * 100))
-                        : 0
-                    }%`
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* List of Watched Titles */}
-            <div>
-              <h4 className="text-sm font-bold text-slate-200 mb-3 flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>عناوین علامت‌زده‌شده توسط این کاربر</span>
-              </h4>
-
-              {(!selectedUserDetail.watchedIds || selectedUserDetail.watchedIds.length === 0) ? (
-                <div className="text-center py-8 bg-slate-950/50 rounded-2xl border border-slate-800 text-xs text-slate-500">
-                  این کاربر هنوز هیچ فیلم یا سریالی را تماشا نکرده است.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-60 overflow-y-auto pr-1">
-                  {items
-                    .filter((item) => selectedUserDetail.watchedIds?.includes(item.id))
-                    .map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-center gap-3 p-2.5 bg-slate-950 border border-slate-800/80 rounded-xl"
-                      >
-                        <img
-                          src={item.posterUrl}
-                          alt={item.titleFa}
-                          className="w-9 h-12 object-cover rounded-lg border border-slate-800 shrink-0"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <h5 className="text-xs font-bold text-slate-200 truncate">{item.titleFa}</h5>
-                          <span className="text-[10px] text-slate-500 block truncate mt-0.5 dir-ltr text-right">
-                            {item.titleEn}
-                          </span>
-                        </div>
-                        {item.isEssential && (
-                          <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" title="اثر حیاتی" />
-                        )}
-                      </div>
-                    ))}
-                </div>
-              )}
-            </div>
-
-            <div className="mt-6 pt-4 border-t border-slate-800 flex justify-end">
+            <div className="flex justify-end">
               <button
                 onClick={() => setSelectedUserDetail(null)}
-                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl cursor-pointer"
               >
                 بستن
               </button>
