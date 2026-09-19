@@ -15,36 +15,45 @@ export const PhoneVerificationModal: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  // خطاهای وب‌سرویس ملی‌پیامک به فارسی
-  const errorMap: Record<string, string> = {
-    '0': 'نام کاربری یا رمز عبور نامعتبر است.',
-    '2': 'اعتبار پنل پیامک کافی نیست (شارژ پنل تمام شده است).',
-    '6': 'سامانه پیامک در حال به‌روزرسانی است.',
-    '-1': 'دسترسی برای استفاده از وب‌سرویس الگو غیرفعال است.',
-    '-4': 'کد الگو (bodyId) تایید نشده یا اشتباه است.',
-    '-5': 'متغیرهای ارسالی با متن الگو همخوانی ندارد.',
-    '-109': 'باید IP در پنل ملی‌پیامک تنظیم شود.',
-    '-110': 'الزام استفاده از کلید API.'
-  };
-
+  // بررسی وضعیت شماره کاربر (هم از حافظه لوکال و هم از فایربیس)
   useEffect(() => {
-    if (currentUser?.username) {
-      const cleanUsername = currentUser.username.toLowerCase();
-      const userDocRef = doc(db, 'users', cleanUsername);
+    if (!currentUser?.username) {
+      setIsOpen(false);
+      return;
+    }
 
-      getDoc(userDocRef).then((docSnap) => {
+    const cleanUsername = currentUser.username.trim().toLowerCase();
+
+    // ۱. بررسی سریع در حافظه لوکال
+    const localPhone = localStorage.getItem(`phone_verified_${cleanUsername}`);
+    if (localPhone) {
+      setIsOpen(false);
+      return;
+    }
+
+    // ۲. بررسی در دیتابیس Firestore
+    const userDocRef = doc(db, 'users', cleanUsername);
+    getDoc(userDocRef)
+      .then((docSnap) => {
         if (docSnap.exists()) {
           const userData = docSnap.data();
-          if (userData.phoneNumber) {
+          if (userData.phoneNumber && userData.phoneNumber.trim().length >= 10) {
+            // شماره در دیتابیس هست؛ در حافظه ذخیره می‌کنیم تا دیگر باز نشود
+            localStorage.setItem(`phone_verified_${cleanUsername}`, userData.phoneNumber.trim());
             setIsOpen(false);
           } else {
+            // کاربر شماره ندارد؛ باز شدن فرم از مرحله اول
+            setStep('phone');
+            setPhoneNumber('');
+            setOtpCode('');
+            setErrorMessage('');
             setIsOpen(true);
           }
         }
-      }).catch((err) => console.error('Error checking user phone:', err));
-    } else {
-      setIsOpen(false);
-    }
+      })
+      .catch((err) => {
+        console.error('Error checking user phone:', err);
+      });
   }, [currentUser]);
 
   useEffect(() => {
@@ -95,22 +104,19 @@ export const PhoneVerificationModal: React.FC = () => {
       });
 
       const responseText = await response.text();
-      // استخراج مقدار پاسخ از تگ XML
       const match = responseText.match(/<string[^>]*>(.*?)<\/string>/);
       const resultVal = match ? match[1].trim() : responseText.trim();
 
-      // در مستندات ملی‌پیامک: عدد بیش از ۱۰ رقم یعنی موفق
       if (resultVal.length >= 10 || (!isNaN(Number(resultVal)) && Number(resultVal) > 100)) {
         setStep('otp');
         setTimer(60);
         setSuccessMessage('کد تایید با موفقیت پیامک شد.');
       } else {
-        const faError = errorMap[resultVal] || `کد خطای پنل پیامک: ${resultVal}`;
-        throw new Error(faError);
+        throw new Error(`خطای پنل پیامک (کد: ${resultVal})`);
       }
     } catch (err: any) {
       console.error('SMS Send Error:', err);
-      setErrorMessage(err?.message || 'خطا در ارسال پیامک. لطفاً دوباره تلاش کنید.');
+      setErrorMessage(err?.message || 'خطا در ارسال پیامک. لطفاً مجدداً تلاش کنید.');
     } finally {
       setIsLoading(false);
     }
@@ -128,9 +134,10 @@ export const PhoneVerificationModal: React.FC = () => {
     setIsLoading(true);
     const cleanPhone = phoneNumber.trim();
     const nowIso = new Date().toISOString();
-    const cleanUsername = currentUser.username.toLowerCase();
+    const cleanUsername = currentUser.username.trim().toLowerCase();
 
     try {
+      // ذخیره در دیتابیس کاربر
       await setDoc(
         doc(db, 'users', cleanUsername),
         {
@@ -141,6 +148,7 @@ export const PhoneVerificationModal: React.FC = () => {
         { merge: true }
       );
 
+      // ذخیره در سرنخ‌های شماره برای بینجر
       await setDoc(
         doc(db, 'phone_leads', cleanPhone),
         {
@@ -151,18 +159,21 @@ export const PhoneVerificationModal: React.FC = () => {
         { merge: true }
       );
 
+      // ثبت در لوکال‌استوریج تا با ریفرش دوباره باز نشود
+      localStorage.setItem(`phone_verified_${cleanUsername}`, cleanPhone);
       setIsOpen(false);
     } catch (err: any) {
       console.error('Error attaching phone to user:', err);
-      setErrorMessage('خطا در ثبت شماره در دیتابیس.');
+      localStorage.setItem(`phone_verified_${cleanUsername}`, cleanPhone);
+      setIsOpen(false);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
-      <div className="relative w-full max-w-md p-6 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl text-right">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md text-right">
+      <div className="relative w-full max-w-md p-6 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl">
         <div className="flex justify-center mb-4">
           <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-emerald-400">
             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -174,9 +185,9 @@ export const PhoneVerificationModal: React.FC = () => {
         <h3 className="text-xl font-bold text-center text-white mb-2">
           تایید شماره حساب کاربری
         </h3>
-        
+
         <p className="text-sm text-slate-300 text-center mb-4 leading-relaxed">
-          کاربر گرامی <span className="text-emerald-400 font-bold">{currentUser.username}</span>، برای ثبت ابری تیک‌های شما و انتقال حساب به نسخه جدید بینجر (Binger)، لطفاً شماره موبایل خود را تایید کنید.
+          کاربر گرامی <span className="text-emerald-400 font-bold">{currentUser.username}</span>لطفاً شماره موبایل خود را تایید کنید.
         </p>
 
         {errorMessage && (
@@ -211,7 +222,7 @@ export const PhoneVerificationModal: React.FC = () => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-xl transition duration-200 shadow-lg shadow-emerald-900/30 disabled:opacity-50"
+              className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-xl transition duration-200 shadow-lg shadow-emerald-900/30 disabled:opacity-50 cursor-pointer"
             >
               {isLoading ? 'در حال ارسال کد...' : 'ارسال کد تایید پیامکی'}
             </button>
@@ -223,7 +234,7 @@ export const PhoneVerificationModal: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setStep('phone')}
-                  className="text-xs text-emerald-400 hover:underline"
+                  className="text-xs text-emerald-400 hover:underline cursor-pointer"
                 >
                   ویرایش شماره
                 </button>
@@ -250,7 +261,7 @@ export const PhoneVerificationModal: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleSendOtp}
-                  className="text-emerald-400 hover:underline"
+                  className="text-emerald-400 hover:underline cursor-pointer"
                 >
                   ارسال مجدد کد تایید
                 </button>
@@ -260,7 +271,7 @@ export const PhoneVerificationModal: React.FC = () => {
             <button
               type="submit"
               disabled={isLoading || otpCode.length < 5}
-              className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-xl transition duration-200 shadow-lg shadow-emerald-900/30 disabled:opacity-50"
+              className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-xl transition duration-200 shadow-lg shadow-emerald-900/30 disabled:opacity-50 cursor-pointer"
             >
               {isLoading ? 'در حال تایید...' : 'تایید شماره و ذخیره در حساب'}
             </button>

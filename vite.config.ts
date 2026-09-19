@@ -16,7 +16,7 @@ export default defineConfig(() => {
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
       proxy: {
         '/api/sms': {
-          target: 'https://api.payamak-panel.com',
+          target: 'http://api.payamak-panel.com',
           changeOrigin: true,
           secure: false,
           rewrite: (path) => path.replace(/^\/api\/sms/, '')

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTimeline } from '../context/TimelineContext';
-import { User, Lock, LogIn, UserPlus, X, CheckCircle2, ShieldCheck, AlertCircle } from 'lucide-react';
+import { User, Lock, LogIn, UserPlus, X, CheckCircle2, ShieldCheck, AlertCircle, Phone } from 'lucide-react';
 
 interface UserAuthModalProps {
   isOpen: boolean;
@@ -13,6 +13,7 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
@@ -35,21 +36,30 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
     }
 
     if (password.trim().length < 6) {
-      setErrorMsg('رمز عبور باید حداقل 6 کاراکتر باشد.');
+      setErrorMsg('رمز عبور باید حداقل ۶ کاراکتر باشد.');
       return;
+    }
+
+    if (mode === 'register') {
+      const cleanPhone = phoneNumber.trim();
+      if (!/^09[0-9]{9}$/.test(cleanPhone)) {
+        setErrorMsg('لطفاً شماره موبایل معتبر ۱۱ رقمی وارد کنید (مثال: 09123456789)');
+        return;
+      }
     }
 
     setLoading(true);
 
     try {
       if (mode === 'register') {
-        const res = await registerUser(username.trim(), password.trim());
+        const res = await (registerUser as any)(username.trim(), password.trim(), phoneNumber.trim());
         if (res.success) {
           setSuccessMsg(res.message);
           setTimeout(() => {
             onClose();
             setUsername('');
             setPassword('');
+            setPhoneNumber('');
           }, 1200);
         } else {
           setErrorMsg(res.message);
@@ -62,36 +72,23 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
             onClose();
             setUsername('');
             setPassword('');
+            setPhoneNumber('');
           }, 1200);
         } else {
           setErrorMsg(res.message);
         }
       }
     } catch (err: any) {
-      // لاگ کردن ارور برای دیباگ خودت
       console.error("Auth Error:", err);
-      
-      const errorMessage = err?.message || '';
-      
-      if (errorMessage.toLowerCase().includes('offline') || errorMessage.toLowerCase().includes('network')) {
-        setErrorMsg('ارتباط با سرور قطع شد. لطفاً اینترنت یا VPN خود را بررسی کرده و مجدداً تلاش کنید.');
-      } else if (errorMessage.includes('already-exists')) {
-        setErrorMsg('این نام کاربری قبلاً ثبت شده است.');
-      } else {
-        setErrorMsg('خطایی رخ داد. لطفاً چند لحظه دیگر امتحان کنید.');
-      }
+      setErrorMsg('خطایی رخ داد. لطفاً وضعیت اینترنت را چک کرده و مجدداً تلاش کنید.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn text-right">
       <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl overflow-hidden">
-        {/* Top Glow Accent */}
-        <div className="absolute -top-16 -right-16 w-32 h-32 bg-emerald-500/20 rounded-full blur-2xl pointer-events-none" />
-
-        {/* Close button */}
         <button
           onClick={onClose}
           className="absolute left-4 top-4 w-9 h-9 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition-colors cursor-pointer"
@@ -99,7 +96,6 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
           <X className="w-5 h-5" />
         </button>
 
-        {/* Logged in state view */}
         {currentUser ? (
           <div className="text-center py-6 space-y-4">
             <div className="w-16 h-16 mx-auto rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
@@ -108,21 +104,17 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
             <div>
               <h3 className="text-xl font-bold text-slate-100">حساب کاربری فعال</h3>
               <p className="text-sm text-emerald-400 font-mono mt-1">@{currentUser.username}</p>
-              <p className="text-xs text-slate-400 mt-2">
-                اطلاعات شما و لیست فیلم‌های دیده‌شده به صورت زنده ثبت شده است.
-              </p>
             </div>
-
             <div className="pt-4 flex items-center justify-center gap-3">
               <button
                 onClick={logoutUser}
-                className="px-5 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                className="px-5 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold rounded-xl cursor-pointer"
               >
                 خروج از حساب کاربری
               </button>
               <button
                 onClick={onClose}
-                className="px-5 py-2.5 bg-emerald-500 text-slate-950 text-xs font-bold rounded-xl hover:bg-emerald-400 transition-all cursor-pointer"
+                className="px-5 py-2.5 bg-emerald-500 text-slate-950 text-xs font-bold rounded-xl hover:bg-emerald-400 cursor-pointer"
               >
                 بستن
               </button>
@@ -130,7 +122,6 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
           </div>
         ) : (
           <div>
-            {/* Header */}
             <div className="text-center mb-6">
               <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 mb-3">
                 {mode === 'login' ? <LogIn className="w-6 h-6" /> : <UserPlus className="w-6 h-6" />}
@@ -140,39 +131,21 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
               </h3>
             </div>
 
-            {/* Mode Switcher Tabs */}
             <div className="flex bg-slate-950 rounded-2xl p-1 mb-6 border border-slate-800">
               <button
-                onClick={() => {
-                  setMode('login');
-                  setErrorMsg('');
-                  setSuccessMsg('');
-                }}
-                className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                  mode === 'login'
-                    ? 'bg-emerald-500 text-slate-950 shadow-md'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
+                onClick={() => { setMode('login'); setErrorMsg(''); }}
+                className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${mode === 'login' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400'}`}
               >
                 ورود
               </button>
               <button
-                onClick={() => {
-                  setMode('register');
-                  setErrorMsg('');
-                  setSuccessMsg('');
-                }}
-                className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                  mode === 'register'
-                    ? 'bg-emerald-500 text-slate-950 shadow-md'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
+                onClick={() => { setMode('register'); setErrorMsg(''); }}
+                className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${mode === 'register' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400'}`}
               >
                 ثبت‌نام جدید
               </button>
             </div>
 
-            {/* Error & Success Messages */}
             {errorMsg && (
               <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
@@ -187,12 +160,9 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
               </div>
             )}
 
-            {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5 text-right">
-                  نام کاربری (Username)
-                </label>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">نام کاربری (Username)</label>
                 <div className="relative">
                   <User className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                   <input
@@ -200,24 +170,39 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     placeholder="مثال: ali_marvel"
-                    className="w-full pr-10 pl-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500 transition-colors"
+                    className="w-full pr-10 pl-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
                     dir="ltr"
                   />
                 </div>
               </div>
 
+              {mode === 'register' && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1.5">شماره موبایل </label>
+                  <div className="relative">
+                    <Phone className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                    <input
+                      type="tel"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      placeholder="09123456789"
+                      className="w-full pr-10 pl-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+              )}
+
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5 text-right">
-                  رمز عبور (Password)
-                </label>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">رمز عبور (Password)</label>
                 <div className="relative">
                   <Lock className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                   <input
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="رمز عبور خود را وارد کنید"
-                    className="w-full pr-10 pl-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500 transition-colors"
+                    placeholder="حداقل ۶ کاراکتر"
+                    className="w-full pr-10 pl-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
                     dir="ltr"
                   />
                 </div>
@@ -228,19 +213,7 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
                 disabled={loading}
                 className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-lg shadow-emerald-500/20 disabled:opacity-50 flex items-center justify-center gap-2 mt-2"
               >
-                {loading ? (
-                  <span>در حال ثبت نام...</span>
-                ) : mode === 'login' ? (
-                  <>
-                    <LogIn className="w-4 h-4" />
-                    <span>ورود به حساب</span>
-                  </>
-                ) : (
-                  <>
-                    <UserPlus className="w-4 h-4" />
-                    <span>ثبت‌نام </span>
-                  </>
-                )}
+                {loading ? 'در حال پردازش...' : mode === 'login' ? 'ورود به حساب' : 'ثبت‌نام و ایجاد حساب'}
               </button>
             </form>
           </div>

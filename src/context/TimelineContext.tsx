@@ -69,18 +69,65 @@ const STORAGE_KEYS = {
   UNIVERSE: 'selected_universe'
 };
 
-// Eras پیش‌فرض برای استاروارز
+// Eras پیشفرض برای استاروارز کاملاً منطبق با تایپ Era
 const STARWARS_ERAS: Era[] = [
-  { id: 'high-republic', name: 'عصر اوج جمهوری', color: 'from-amber-600 to-yellow-500' },
-  { id: 'prequels', name: 'دوران پیش‌درآمد و ظهور سیت', color: 'from-blue-600 to-cyan-500' },
-  { id: 'clone-wars', name: 'جنگ‌های کلون', color: 'from-indigo-600 to-blue-500' },
-  { id: 'empire-rise', name: 'عصر سلطه امپراتوری', color: 'from-red-700 to-rose-600' },
-  { id: 'rebellion', name: 'دوران اتحاد شورشیان', color: 'from-orange-600 to-amber-500' },
-  { id: 'original-trilogy', name: 'سه‌گانه کلاسیک', color: 'from-emerald-600 to-teal-500' },
-  { id: 'new-republic', name: 'عصر جمهوری جدید', color: 'from-cyan-600 to-blue-600' },
-  { id: 'sequels', name: 'سه‌گانه سیکوئل', color: 'from-purple-600 to-pink-500' }
+  {
+    id: 'high-republic',
+    titleFa: 'عصر اوج جمهوری',
+    titleEn: 'The High Republic',
+    periodFa: '۲۳۲ تا ۱۰۰ ق.ی',
+    descriptionFa: 'عصر طلایی جدای‌ها و شکوفایی صلح در کهکشان پیش از نفوذ تاریکی'
+  },
+  {
+    id: 'prequels',
+    titleFa: 'سقوط جمهوری و ظهور سیت',
+    titleEn: 'Fall of the Jedi',
+    periodFa: '۳۲ تا ۱۹ ق.ی',
+    descriptionFa: 'دوران پیش‌درآمد، جنگ‌های کلون و سقوط آناکین اسکای‌واکر'
+  },
+  {
+    id: 'clone-wars',
+    titleFa: 'جنگ‌های کلون',
+    titleEn: 'The Clone Wars',
+    periodFa: '۲۲ تا ۱۹ ق.ی',
+    descriptionFa: 'نبرد تمام‌عیار میان جمهوری کهکشانی و ارتش جدایی‌طلبان'
+  },
+  {
+    id: 'empire-rise',
+    titleFa: 'عصر سلطه امپراتوری',
+    titleEn: 'Reign of the Empire',
+    periodFa: '۱۹ تا ۰ ق.ی',
+    descriptionFa: 'سال‌های سیاه پس از اجرای فرمان ۶۶ و شکار بازماندگان جدای'
+  },
+  {
+    id: 'rebellion',
+    titleFa: 'دوران اتحاد شورشیان',
+    titleEn: 'Age of Rebellion',
+    periodFa: '۰ تا ۴ ب.ی',
+    descriptionFa: 'سه‌گانه کلاسیک؛ قیام لوک اسکای‌واکر و سقوط امپراتور پالپاتین'
+  },
+  {
+    id: 'original-trilogy',
+    titleFa: 'سه‌گانه کلاسیک',
+    titleEn: 'Original Trilogy',
+    periodFa: '۰ تا ۴ ب.ی',
+    descriptionFa: 'امید تازه، امپراتوری ضربه می‌زند و بازگشت جدای'
+  },
+  {
+    id: 'new-republic',
+    titleFa: 'عصر جمهوری جدید',
+    titleEn: 'The New Republic',
+    periodFa: '۹ تا ۳۴ ب.ی',
+    descriptionFa: 'دوران بازسازی کهکشان، مندلورین، آسوکا و ظهور بازماندگان امپراتوری'
+  },
+  {
+    id: 'sequels',
+    titleFa: 'ظهور محفل یکم و نبرد پایانی',
+    titleEn: 'Rise of the First Order',
+    periodFa: '۳۴ تا ۳۵ ب.ی',
+    descriptionFa: 'سه‌گانه پایانی و نبرد نهایی مقاومت در برابر محفل یکم'
+  }
 ];
-
 const TimelineContext = createContext<TimelineContextType | undefined>(undefined);
 
 export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -116,21 +163,28 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   });
 
-  // Star Wars Items تبدیل شده به تایپ استاندارد
-  const starwarsItems: MCUItem[] = starwarsTimelineData.map((item) => ({
-    id: item.id,
-    chronoOrder: item.order,
-    titleFa: item.titleFa,
-    titleEn: item.titleEn,
-    releaseYear: item.releaseYear,
-    inUniverseYear: item.inUniverseYear,
-    rtScore: item.rtScore,
-    isEssential: item.isEssential,
-    watchFor: item.watchFor,
-    tiesIn: item.tiesIn,
-    type: item.type,
-    eraId: item.eraId,
-    runtimeMinutes: item.type === 'movie' ? 130 : 45
+ // Star Wars Items تبدیل شده به تایپ استاندارد همراه با پوستر و اطلاعات قسمت‌ها
+  // تبدیل آیتم‌های استاروارز به تایپ استاندارد همراه با پوستر و نمایش تعداد قسمت‌ها
+  const starwarsItems: MCUItem[] = (starwarsTimelineData as any[]).map((item) => ({
+    id: String(item.id),
+    chronoOrder: Number(item.order || item.chronoOrder || 1),
+    titleFa: item.titleFa || '',
+    titleEn: item.titleEn || '',
+    releaseYear: Number(item.releaseYear || 2020),
+    inUniverseYear: item.inUniverseYear || '',
+    runtimeMinutes: Number(item.runtimeMinutes || (item.type === 'movie' ? 130 : 45)),
+    runtimeOrEpsDisplay: item.runtimeOrEpsDisplay || (item.type === 'series' ? `${item.episodes || item.totalEpisodes || ''} قسمت` : undefined),
+    type: (item.type || 'movie'),
+    rtScore: Number(item.rtScore || 80),
+    isEssential: Boolean(item.isEssential),
+    eraId: item.eraId || 'high-republic',
+    watchFor: item.watchFor || '',
+    tiesIn: item.tiesIn || '',
+    posterUrl: item.posterUrl || item.poster || 'https://images.unsplash.com/photo-1579566346927-c68383817a25?auto=format&fit=crop&w=600&q=80',
+    timelineNote: item.timelineNote || undefined,
+    directorOrCreator: item.directorOrCreator || undefined,
+    keyCharacters: item.keyCharacters || undefined,
+    trailerUrl: item.trailerUrl || undefined
   }));
 
   // تعیین آیتم‌ها و دوره‌ها بر اساس دنیای فعال
@@ -259,7 +313,7 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     ]);
   };
 
-  const registerUser = async (username: string, password: string) => {
+const registerUser = async (username: string, password: string, phoneNumber?: string) => {
     const cleanUsername = username.trim().toLowerCase();
     const userDocRef = doc(db, 'users', cleanUsername);
 
@@ -270,9 +324,13 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
 
       const nowIso = new Date().toISOString();
+      const cleanPhone = (phoneNumber || '').trim();
+
       const userData = {
         username: username.trim(),
         password: password.trim(),
+        phoneNumber: cleanPhone,
+        phoneVerified: Boolean(cleanPhone),
         registeredAt: nowIso,
         lastLoginAt: nowIso,
         watchedMcuCount: watchedMcuIds.size,
@@ -281,17 +339,26 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         watchedSwIds: Array.from(watchedSwIds)
       };
 
+      // ذخیره قطعی شماره در حساب کاربر
       await setDoc(userDocRef, userData);
+
+      // ذخیره در حافظه لوکال برای جلوگیری از باز شدن دوباره مودال
+      if (cleanPhone) {
+        localStorage.setItem(`phone_verified_${cleanUsername}`, cleanPhone);
+        await setDoc(
+          doc(db, 'phone_leads', cleanPhone),
+          {
+            phoneNumber: cleanPhone,
+            username: username.trim(),
+            verifiedAt: nowIso
+          },
+          { merge: true }
+        );
+      }
+
       setCurrentUser({ username: username.trim() });
       return { success: true, message: 'حساب کاربری با موفقیت ساخته شد.' };
     } catch (err: any) {
-      const errMsg = (err?.message || '').toLowerCase();
-      if (errMsg.includes('offline') || errMsg.includes('timeout') || errMsg.includes('unavailable')) {
-        return { 
-          success: false, 
-          message: 'ارتباط با سرور برقرار نشد. لطفاً وضعیت VPN یا اینترنت خود را چک کرده و دوباره دکمه ثبت‌نام را بزنید.' 
-        };
-      }
       return { success: false, message: 'خطا در ثبت نام: ' + (err?.message || 'مشکل در برقراری ارتباط') };
     }
   };
