@@ -3,7 +3,7 @@ import { useTimeline } from '../context/TimelineContext';
 import { MCUItem } from '../types';
 import { toPersianDigits } from './MovieCard';
 import { db } from '../lib/firebase';
-import { collection, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
+import { collection, onSnapshot, deleteDoc, doc, setDoc } from 'firebase/firestore';
 import {
   BarChart,
   Bar,
@@ -79,6 +79,10 @@ export const AdminDashboard: React.FC = () => {
   const [phoneFilter, setPhoneFilter] = useState<'all' | 'withPhone' | 'noPhone'>('all');
   const [selectedUserDetail, setSelectedUserDetail] = useState<AdminUser | null>(null);
 
+  // استیت ویرایش دستی شماره تلفن در پنل
+  const [manualPhoneInput, setManualPhoneInput] = useState('');
+  const [savingPhone, setSavingPhone] = useState(false);
+
   // صفحه‌بندی
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
@@ -132,7 +136,6 @@ export const AdminDashboard: React.FC = () => {
           });
         });
 
-        // مرتب‌سازی بر اساس تاریخ ثبت نام
         usersList.sort((a, b) => new Date(b.registeredAt).getTime() - new Date(a.registeredAt).getTime());
         setRegisteredUsers(usersList);
         setLoadingUsers(false);
@@ -146,7 +149,6 @@ export const AdminDashboard: React.FC = () => {
     return () => unsubscribe();
   }, [isAdmin]);
 
-  // فیلتر کردن کاربران
   const filteredUsers = useMemo(() => {
     return registeredUsers.filter((u) => {
       const matchSearch =
@@ -159,26 +161,22 @@ export const AdminDashboard: React.FC = () => {
     });
   }, [registeredUsers, userSearchTerm, phoneFilter]);
 
-  // کاربران صفحه جاری
   const totalPages = Math.max(1, Math.ceil(filteredUsers.length / itemsPerPage));
   const paginatedUsers = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
     return filteredUsers.slice(start, start + itemsPerPage);
   }, [filteredUsers, currentPage]);
 
-  // کاربران برتر (بیشترین تماشا)
   const topUsers = useMemo(() => {
     return [...registeredUsers]
       .sort((a, b) => b.watchedTotalCount - a.watchedTotalCount)
       .slice(0, 5);
   }, [registeredUsers]);
 
-  // آمار کلیدی
   const usersWithPhoneCount = registeredUsers.filter((u) => u.phoneNumber).length;
   const totalMcuWatched = registeredUsers.reduce((sum, u) => sum + u.watchedMcuCount, 0);
   const totalSwWatched = registeredUsers.reduce((sum, u) => sum + u.watchedSwCount, 0);
 
-  // خروجی CSV شماره‌ها برای بینجر
   const handleExportCSV = () => {
     const list = registeredUsers.filter((u) => u.phoneNumber);
     if (list.length === 0) {
@@ -199,6 +197,50 @@ export const AdminDashboard: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // ثبت دستی شماره برای کاربر
+  const handleSaveManualPhone = async () => {
+    if (!selectedUserDetail) return;
+    const cleanPhone = manualPhoneInput.trim();
+    if (!cleanPhone) {
+      alert('لطفاً شماره را وارد کنید');
+      return;
+    }
+
+    setSavingPhone(true);
+    try {
+      const userDocRef = doc(db, 'users', selectedUserDetail.id);
+      const nowIso = new Date().toISOString();
+
+      await setDoc(
+        userDocRef,
+        {
+          phoneNumber: cleanPhone,
+          phoneVerified: true,
+          phoneVerifiedAt: nowIso
+        },
+        { merge: true }
+      );
+
+      // ذخیره در سرنخ‌ها برای بینجر
+      await setDoc(
+        doc(db, 'phone_leads', cleanPhone),
+        {
+          phoneNumber: cleanPhone,
+          username: selectedUserDetail.username,
+          verifiedAt: nowIso
+        },
+        { merge: true }
+      );
+
+      setSelectedUserDetail((prev) => (prev ? { ...prev, phoneNumber: cleanPhone, phoneVerified: true } : null));
+      alert(`شماره برای کاربر @${selectedUserDetail.username} با موفقیت ثبت شد!`);
+    } catch (err: any) {
+      alert('خطا در ثبت شماره: ' + err?.message);
+    } finally {
+      setSavingPhone(false);
+    }
   };
 
   const handleDeleteUser = async (userId: string, username: string) => {
@@ -228,13 +270,12 @@ export const AdminDashboard: React.FC = () => {
             <Lock className="w-8 h-8" />
           </div>
           <h2 className="text-xl font-bold text-slate-100 mb-2">ورود به پنل مدیریت</h2>
-          <p className="text-xs text-slate-400 mb-6">برای مدیریت کاربران، شماره‌های ثبت‌شده و آمار وارد شوید.</p>
           <form onSubmit={handleLoginSubmit} className="space-y-4">
             <input
               type="password"
               value={passInput}
               onChange={(e) => setPassInput(e.target.value)}
-              placeholder="رمز عبور مدیر (مثال: admin یا doomsday)"
+              placeholder="رمز عبور مدیر"
               className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 text-center"
             />
             {loginError && <div className="text-xs text-rose-400 font-semibold">{loginError}</div>}
@@ -252,7 +293,6 @@ export const AdminDashboard: React.FC = () => {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 text-right">
-      {/* هدر مدیریت */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8 bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl">
         <div>
           <div className="flex items-center gap-2 text-emerald-400 text-xs font-semibold mb-1">
@@ -281,7 +321,6 @@ export const AdminDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* تب‌ها */}
       <div className="flex flex-wrap items-center gap-3 mb-8 border-b border-slate-800 pb-3">
         <button
           onClick={() => setActiveTab('users')}
@@ -320,10 +359,8 @@ export const AdminDashboard: React.FC = () => {
         </button>
       </div>
 
-      {/* تب ۱: جدول کاربران */}
       {activeTab === 'users' && (
         <div className="space-y-6">
-          {/* کارت‌های آماری */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
               <span className="text-xs text-slate-400 block mb-1">کل کاربران ثبت‌شده</span>
@@ -351,10 +388,8 @@ export const AdminDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* جدول اصلی کاربران */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-              {/* فیلترها و سرچ */}
               <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
                 <div className="relative w-full sm:w-64">
                   <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
@@ -445,9 +480,12 @@ export const AdminDashboard: React.FC = () => {
                         </td>
                         <td className="p-3 text-center flex items-center justify-center gap-1.5">
                           <button
-                            onClick={() => setSelectedUserDetail(user)}
+                            onClick={() => {
+                              setSelectedUserDetail(user);
+                              setManualPhoneInput(user.phoneNumber || '');
+                            }}
                             className="p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg transition-colors cursor-pointer"
-                            title="جزئیات کامل"
+                            title="مشاهده و ویرایش شماره"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
@@ -466,7 +504,6 @@ export const AdminDashboard: React.FC = () => {
               </div>
             )}
 
-            {/* نوار صفحه‌بندی (Pagination) */}
             {totalPages > 1 && (
               <div className="flex items-center justify-between border-t border-slate-800 pt-4 mt-6">
                 <button
@@ -496,14 +533,12 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* تب ۲: آمار و لیدربورد کاربران برتر */}
       {activeTab === 'dashboard' && (
         <div className="space-y-6">
-          {/* لیدربورد کاربران برتر */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl">
             <h3 className="text-base font-bold text-slate-100 mb-4 flex items-center gap-2">
               <Trophy className="w-5 h-5 text-amber-400" />
-              <span>کاربران با بیشترین تعداد تماشا (پرفشارترین کاربرها)</span>
+              <span>کاربران با بیشترین تعداد تماشا</span>
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
@@ -532,7 +567,6 @@ export const AdminDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* نسبت تماشای مارول به استاروارز */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
             <h3 className="text-base font-bold text-slate-100 mb-4 flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-emerald-400" />
@@ -553,7 +587,7 @@ export const AdminDashboard: React.FC = () => {
                     outerRadius={90}
                     paddingAngle={5}
                     dataKey="value"
-                    label={({ name, percent }) => `${name}: ${(((percent || 0) * 100)).toFixed(0)}%`}
+                    label={({ name, percent = 0 }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                   >
                     <Cell fill="#ef4444" />
                     <Cell fill="#06b6d4" />
@@ -566,7 +600,6 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* تب ۳: مدیریت فیلم‌ها و سریال‌ها */}
       {activeTab === 'content' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1">
@@ -666,7 +699,7 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* مدال جزئیات کاربر */}
+      {/* مدال جزئیات کاربر و ویرایش دستی شماره تماس */}
       {selectedUserDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
           <div className="relative w-full max-w-xl bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl">
@@ -677,7 +710,7 @@ export const AdminDashboard: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-white" dir="ltr">@{selectedUserDetail.username}</h3>
-                  <p className="text-xs text-slate-400">{selectedUserDetail.phoneNumber || 'بدون شماره تماس'}</p>
+                  <p className="text-xs text-slate-400 font-mono">شناسه در دیتابیس: {selectedUserDetail.id}</p>
                 </div>
               </div>
               <button
@@ -686,6 +719,34 @@ export const AdminDashboard: React.FC = () => {
               >
                 <X className="w-4 h-4" />
               </button>
+            </div>
+
+            {/* بخش ویرایش یا ثبت دستی شماره تلفن (مخصوص کاربران خارج از کشور) */}
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-6">
+              <label className="block text-xs font-bold text-emerald-400 mb-2">
+                ویرایش / ثبت دستی شماره تماس (برای کاربران خارج از کشور یا بدون کد)
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  dir="ltr"
+                  value={manualPhoneInput}
+                  onChange={(e) => setManualPhoneInput(e.target.value)}
+                  placeholder="مثال: +123456789 یا 0912..."
+                  className="flex-1 px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 font-mono text-center"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveManualPhone}
+                  disabled={savingPhone}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {savingPhone ? 'در حال ثبت...' : 'ثبت شماره'}
+                </button>
+              </div>
+              <span className="text-[11px] text-slate-500 mt-2 block">
+                با زدن دکمه ثبت، شماره مستقیماً در پرونده کاربر در فایربیس ذخیره شده و مودال تایید شماره برای او غیرفعال می‌شود.
+              </span>
             </div>
 
             <div className="grid grid-cols-3 gap-3 mb-6">
