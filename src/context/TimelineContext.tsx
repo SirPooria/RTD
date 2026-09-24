@@ -334,40 +334,52 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const loginUser = async (username: string, password: string) => {
-     const cleanUsername = username.trim().toLowerCase();
-     const email = `${cleanUsername}@auth.rtd.local`;
+    const cleanUsername = username.trim().toLowerCase();
+    const email = `${cleanUsername}@auth.rtd.local`;
 
-     try {
-       const credential = await signInWithEmailAndPassword(auth, email, password);
-       const userDocRef = doc(db, 'users', credential.user.uid);
-       const docSnap = await fetchDocWithTimeout(userDocRef);
-       if (!docSnap.exists()) return { success: false, message: 'اطلاعات حساب ناقص است؛ با مدیر تماس بگیرید.' };
-       const userData = docSnap.data() as {
-         username?: string;
-         watchedIds?: string[];
-         watchedSwIds?: string[];
-       };
-       const nowIso = new Date().toISOString();
-       await setDoc(userDocRef, { lastLoginAt: nowIso }, { merge: true });
+    const signInAndLoadProfile = async () => {
+      const credential = await signInWithEmailAndPassword(auth, email, password);
+      const userDocRef = doc(db, 'users', credential.user.uid);
+      const docSnap = await fetchDocWithTimeout(userDocRef);
+      if (!docSnap.exists()) return { success: false, message: 'اطلاعات حساب ناقص است؛ با مدیر تماس بگیرید.' };
+      const userData = docSnap.data() as {
+        username?: string;
+        watchedIds?: string[];
+        watchedSwIds?: string[];
+      };
+      const nowIso = new Date().toISOString();
+      await setDoc(userDocRef, { lastLoginAt: nowIso }, { merge: true });
 
-      if (Array.isArray(userData.watchedIds)) {
-        setWatchedMcuIds(new Set(userData.watchedIds));
+      if (Array.isArray(userData.watchedIds)) setWatchedMcuIds(new Set(userData.watchedIds));
+      if (Array.isArray(userData.watchedSwIds)) setWatchedSwIds(new Set(userData.watchedSwIds));
+
+      setCurrentUser({ username: userData.username || cleanUsername, uid: credential.user.uid });
+      return { success: true, message: 'ورود با موفقیت انجام شد.' };
+    };
+
+    try {
+      return await signInAndLoadProfile();
+    } catch (err: any) {
+      const errMsg = (err?.message || '').toLowerCase();
+      const needsLegacyMigration = err?.code === 'auth/invalid-credential' || err?.code === 'auth/user-not-found';
+
+      if (needsLegacyMigration) {
+        try {
+          const migrationResponse = await fetch('/api/auth/migrate-legacy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: cleanUsername, password })
+          });
+          if (migrationResponse.ok) return await signInAndLoadProfile();
+        } catch (migrationError) {
+          console.error('Legacy account migration request failed:', migrationError);
+        }
+        return { success: false, message: 'نام کاربری یا رمز عبور اشتباه است.' };
       }
-      if (Array.isArray(userData.watchedSwIds)) {
-        setWatchedSwIds(new Set(userData.watchedSwIds));
-      }
-
-       setCurrentUser({ username: userData.username || cleanUsername, uid: credential.user.uid });
-       return { success: true, message: 'ورود با موفقیت انجام شد.' };
-     } catch (err: any) {
-       const errMsg = (err?.message || '').toLowerCase();
-       if (err?.code === 'auth/invalid-credential' || err?.code === 'auth/user-not-found') {
-         return { success: false, message: 'نام کاربری یا رمز عبور اشتباه است.' };
-       }
       if (errMsg.includes('offline') || errMsg.includes('timeout') || errMsg.includes('unavailable')) {
-        return { 
-          success: false, 
-          message: 'ارتباط با سرور برقرار نشد. لطفاً وضعیت VPN یا اینترنت خود را چک کرده و دوباره تلاش کنید.' 
+        return {
+          success: false,
+          message: 'ارتباط با سرور برقرار نشد. لطفاً وضعیت VPN یا اینترنت خود را چک کرده و دوباره تلاش کنید.'
         };
       }
       return { success: false, message: 'خطا در ورود: ' + (err?.message || 'مشکل در برقراری ارتباط') };
