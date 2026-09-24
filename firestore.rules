@@ -16,7 +16,7 @@ service cloud.firestore {
       allow list: if isAdmin();
       allow create: if signedIn()
         && request.auth.uid == userId
-        && request.resource.data.username.matches('^[a-z0-9_]{3,32}$')
+        && request.resource.data.username.matches('^[a-z0-9._]{3,32}$')
         && request.resource.data.username == request.auth.token.email.split('@')[0]
         && request.resource.data.keys().hasOnly([
           'username', 'registeredAt', 'lastLoginAt', 'watchedMcuCount',

@@ -2,6 +2,9 @@
   "functions": {
     "api/sms/*.ts": {
       "maxDuration": 15
+    },
+    "api/auth/*.ts": {
+      "maxDuration": 15
     }
   }
 }

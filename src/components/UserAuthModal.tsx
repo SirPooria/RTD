@@ -30,8 +30,8 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
     }
 
     const cleanUsername = username.trim().toLowerCase();
-    if (!/^[a-z0-9_]{3,32}$/.test(cleanUsername)) {
-      setErrorMsg('نام کاربری باید ۳ تا ۳۲ کاراکتر و فقط شامل حروف انگلیسی، عدد یا _ باشد.');
+    if (!/^[a-z0-9._]{3,32}$/.test(cleanUsername)) {
+    setErrorMsg('نام کاربری باید ۳ تا ۳۲ کاراکتر و فقط شامل حروف انگلیسی، عدد، نقطه یا _ باشد.');
       return;
     }
 

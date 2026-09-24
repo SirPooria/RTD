@@ -37,7 +37,7 @@ There is no admin password in the client anymore. The old values `admin`, `12345
 
 ## Existing users
 
-Old accounts used a custom plaintext-password scheme and document IDs based on usernames. They cannot be silently treated as secure Firebase accounts. Ask existing users to register again, or perform a controlled one-time migration on a trusted server after verifying ownership. Do not copy the old password field into Firebase.
+Existing users do not need to register again. When an old user signs in for the first time, `/api/auth/migrate-legacy` verifies the old credentials on the server, creates the matching Firebase Auth account, copies progress, and removes the old plaintext password field. The user keeps the same username and password. A legacy phone number is trusted only when the old record has a verification timestamp; otherwise the user is asked to verify that number once.
 
 ## SMS diagnosis
 
