@@ -48,7 +48,6 @@ export interface MovieCheckStat {
 export interface RegisteredUser {
   id: string;
   username: string;
-  password: string;
   registeredAt: string;
   lastLoginAt: string;
   watchedCount?: number;

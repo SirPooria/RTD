@@ -1,8 +1,7 @@
 {
-  "rewrites": [
-    {
-      "source": "/api/sms/:path*",
-      "destination": "https://api.payamak-panel.com/:path*"
+  "functions": {
+    "api/sms/*.ts": {
+      "maxDuration": 15
     }
-  ]
+  }
 }

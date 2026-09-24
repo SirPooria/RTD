@@ -2,13 +2,20 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Era, FilterStatus, MCUItem } from '../types';
 import { INITIAL_ERAS, INITIAL_MCU_ITEMS, MOCK_VISITOR_STATS } from '../data/mcuTimelineData';
 import { starwarsTimelineData } from '../data/starwarsTimelineData';
-import { db } from '../lib/firebase';
+import { auth, db } from '../lib/firebase';
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut
+} from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 export type UniverseType = 'mcu' | 'starwars';
 
 interface UserState {
   username: string;
+  uid: string;
 }
 
 interface TimelineContextType {
@@ -42,8 +49,6 @@ interface TimelineContextType {
 
   // Admin Capabilities
   isAdmin: boolean;
-  loginAdmin: (password: string) => boolean;
-  logoutAdmin: () => void;
   addItem: (newItem: Omit<MCUItem, 'id' | 'chronoOrder'>) => void;
   updateItem: (id: string, updated: Partial<MCUItem>) => void;
   deleteItem: (id: string) => void;
@@ -213,43 +218,45 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const watchedIds = universe === 'mcu' ? watchedMcuIds : watchedSwIds;
 
   // Current User State
-  const [currentUser, setCurrentUser] = useState<UserState | null>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [currentUser, setCurrentUser] = useState<UserState | null>(null);
 
   // Admin Auth
-  const [isAdmin, setIsAdmin] = useState<boolean>(() => {
-    return currentUser?.username?.toLowerCase() === 'pooraf';
-  });
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [userDataReady, setUserDataReady] = useState(false);
 
   useEffect(() => {
-    if (currentUser?.username) {
-      const cleanUsername = currentUser.username.toLowerCase();
-      setIsAdmin(cleanUsername === 'pooraf');
+    return onAuthStateChanged(auth, async (firebaseUser) => {
+      setUserDataReady(false);
+      setWatchedMcuIds(new Set());
+      setWatchedSwIds(new Set());
 
-      const userDocRef = doc(db, 'users', cleanUsername);
-      getDoc(userDocRef)
-        .then((docSnap) => {
-          if (docSnap.exists()) {
-            const data = docSnap.data();
-            if (Array.isArray(data.watchedIds)) {
-              setWatchedMcuIds(new Set(data.watchedIds));
-            }
-            if (Array.isArray(data.watchedSwIds)) {
-              setWatchedSwIds(new Set(data.watchedSwIds));
-            }
-          }
-        })
-        .catch((err) => console.error('Error fetching Firestore progress:', err));
-    } else {
-      setIsAdmin(false);
-    }
-  }, [currentUser]);
+      if (!firebaseUser) {
+        setCurrentUser(null);
+        setIsAdmin(false);
+        setUserDataReady(true);
+        return;
+      }
+
+      try {
+        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+        const data = userDoc.exists() ? userDoc.data() : {};
+        const username = typeof data.username === 'string' ? data.username : firebaseUser.email?.split('@')[0] || 'user';
+
+        if (Array.isArray(data.watchedIds)) setWatchedMcuIds(new Set(data.watchedIds));
+        if (Array.isArray(data.watchedSwIds)) setWatchedSwIds(new Set(data.watchedSwIds));
+
+        const adminDoc = await getDoc(doc(db, 'admins', firebaseUser.uid));
+        setIsAdmin(adminDoc.exists() && adminDoc.data().enabled !== false);
+        setCurrentUser({ username, uid: firebaseUser.uid });
+      } catch (err) {
+        console.error('Error fetching authenticated user:', err);
+        setCurrentUser(null);
+        setIsAdmin(false);
+      } finally {
+        setUserDataReady(true);
+      }
+    });
+  }, []);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -273,9 +280,8 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     localStorage.setItem(STORAGE_KEYS.WATCHED_MCU, JSON.stringify(mcuArray));
     localStorage.setItem(STORAGE_KEYS.WATCHED_SW, JSON.stringify(swArray));
 
-    if (currentUser?.username) {
-      const cleanUsername = currentUser.username.toLowerCase();
-      const userDocRef = doc(db, 'users', cleanUsername);
+     if (currentUser?.uid && userDataReady) {
+       const userDocRef = doc(db, 'users', currentUser.uid);
 
       setDoc(
         userDocRef,
@@ -289,19 +295,7 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         { merge: true }
       ).catch((err) => console.error('Error syncing progress:', err));
     }
-  }, [watchedMcuIds, watchedSwIds, currentUser]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.ADMIN_AUTH, String(isAdmin));
-  }, [isAdmin]);
-
-  useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
-    } else {
-      localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
-    }
-  }, [currentUser]);
+  }, [watchedMcuIds, watchedSwIds, currentUser, userDataReady]);
 
 // متد کمکی برای جلوگیری از فریز شدن ریکوئست‌های فایراستور
   const fetchDocWithTimeout = async (docRef: any, timeoutMs = 7000) => {
@@ -313,73 +307,48 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     ]);
   };
 
-const registerUser = async (username: string, password: string, phoneNumber?: string) => {
+  const registerUser = async (username: string, password: string) => {
     const cleanUsername = username.trim().toLowerCase();
-    const userDocRef = doc(db, 'users', cleanUsername);
+    const email = `${cleanUsername}@auth.rtd.local`;
 
     try {
-      const docSnap: any = await fetchDocWithTimeout(userDocRef);
-      if (docSnap.exists()) {
-        return { success: false, message: 'این نام کاربری قبلاً در دیتابیس ثبت شده است.' };
-      }
-
+      const credential = await createUserWithEmailAndPassword(auth, email, password);
       const nowIso = new Date().toISOString();
-      const cleanPhone = (phoneNumber || '').trim();
-
-      const userData = {
-        username: username.trim(),
-        password: password.trim(),
-        phoneNumber: cleanPhone,
-        phoneVerified: Boolean(cleanPhone),
+      await setDoc(doc(db, 'users', credential.user.uid), {
+        username: cleanUsername,
         registeredAt: nowIso,
         lastLoginAt: nowIso,
-        watchedMcuCount: watchedMcuIds.size,
-        watchedSwCount: watchedSwIds.size,
-        watchedIds: Array.from(watchedMcuIds),
-        watchedSwIds: Array.from(watchedSwIds)
-      };
-
-      // ذخیره قطعی شماره در حساب کاربر
-      await setDoc(userDocRef, userData);
-
-      // ذخیره در حافظه لوکال برای جلوگیری از باز شدن دوباره مودال
-      if (cleanPhone) {
-        localStorage.setItem(`phone_verified_${cleanUsername}`, cleanPhone);
-        await setDoc(
-          doc(db, 'phone_leads', cleanPhone),
-          {
-            phoneNumber: cleanPhone,
-            username: username.trim(),
-            verifiedAt: nowIso
-          },
-          { merge: true }
-        );
-      }
-
-      setCurrentUser({ username: username.trim() });
+        watchedMcuCount: 0,
+        watchedSwCount: 0,
+        watchedIds: [],
+        watchedSwIds: []
+      });
+      setCurrentUser({ username: cleanUsername, uid: credential.user.uid });
       return { success: true, message: 'حساب کاربری با موفقیت ساخته شد.' };
     } catch (err: any) {
+      const code = err?.code || '';
+      if (code === 'auth/email-already-in-use') return { success: false, message: 'این نام کاربری قبلاً ثبت شده است.' };
+      if (code === 'auth/weak-password') return { success: false, message: 'رمز عبور باید حداقل ۶ کاراکتر باشد.' };
       return { success: false, message: 'خطا در ثبت نام: ' + (err?.message || 'مشکل در برقراری ارتباط') };
     }
   };
 
   const loginUser = async (username: string, password: string) => {
-    const cleanUsername = username.trim().toLowerCase();
-    const userDocRef = doc(db, 'users', cleanUsername);
+     const cleanUsername = username.trim().toLowerCase();
+     const email = `${cleanUsername}@auth.rtd.local`;
 
-    try {
-      const docSnap: any = await fetchDocWithTimeout(userDocRef);
-      if (!docSnap.exists()) {
-        return { success: false, message: 'کاربری با این نام یافت نشد. لطفاً ابتدا ثبت‌نام کنید.' };
-      }
-
-      const userData = docSnap.data();
-      if (userData.password !== password.trim()) {
-        return { success: false, message: 'رمز عبور وارد شده اشتباه است.' };
-      }
-
-      const nowIso = new Date().toISOString();
-      await setDoc(userDocRef, { lastLoginAt: nowIso }, { merge: true });
+     try {
+       const credential = await signInWithEmailAndPassword(auth, email, password);
+       const userDocRef = doc(db, 'users', credential.user.uid);
+       const docSnap = await fetchDocWithTimeout(userDocRef);
+       if (!docSnap.exists()) return { success: false, message: 'اطلاعات حساب ناقص است؛ با مدیر تماس بگیرید.' };
+       const userData = docSnap.data() as {
+         username?: string;
+         watchedIds?: string[];
+         watchedSwIds?: string[];
+       };
+       const nowIso = new Date().toISOString();
+       await setDoc(userDocRef, { lastLoginAt: nowIso }, { merge: true });
 
       if (Array.isArray(userData.watchedIds)) {
         setWatchedMcuIds(new Set(userData.watchedIds));
@@ -388,10 +357,13 @@ const registerUser = async (username: string, password: string, phoneNumber?: st
         setWatchedSwIds(new Set(userData.watchedSwIds));
       }
 
-      setCurrentUser({ username: userData.username || username.trim() });
-      return { success: true, message: 'ورود با موفقیت انجام شد.' };
-    } catch (err: any) {
-      const errMsg = (err?.message || '').toLowerCase();
+       setCurrentUser({ username: userData.username || cleanUsername, uid: credential.user.uid });
+       return { success: true, message: 'ورود با موفقیت انجام شد.' };
+     } catch (err: any) {
+       const errMsg = (err?.message || '').toLowerCase();
+       if (err?.code === 'auth/invalid-credential' || err?.code === 'auth/user-not-found') {
+         return { success: false, message: 'نام کاربری یا رمز عبور اشتباه است.' };
+       }
       if (errMsg.includes('offline') || errMsg.includes('timeout') || errMsg.includes('unavailable')) {
         return { 
           success: false, 
@@ -403,6 +375,7 @@ const registerUser = async (username: string, password: string, phoneNumber?: st
   };
 
   const logoutUser = () => {
+    void signOut(auth);
     setCurrentUser(null);
     setIsAdmin(false);
     setWatchedMcuIds(new Set());
@@ -432,16 +405,6 @@ const registerUser = async (username: string, password: string, phoneNumber?: st
     if (universe === 'mcu') setWatchedMcuIds(updater);
     else setWatchedSwIds(updater);
   };
-
-  const loginAdmin = (password: string): boolean => {
-    if (password === 'admin' || password === '123456' || password === 'doomsday') {
-      setIsAdmin(true);
-      return true;
-    }
-    return false;
-  };
-
-  const logoutAdmin = () => setIsAdmin(false);
 
   const addItem = (newItemData: Omit<MCUItem, 'id' | 'chronoOrder'>) => {
     const nextOrder = mcuItems.length > 0 ? Math.max(...mcuItems.map((i) => i.chronoOrder)) + 1 : 1;
@@ -518,8 +481,6 @@ const registerUser = async (username: string, password: string, phoneNumber?: st
         logoutUser,
 
         isAdmin,
-        loginAdmin,
-        logoutAdmin,
         addItem,
         updateItem,
         deleteItem,

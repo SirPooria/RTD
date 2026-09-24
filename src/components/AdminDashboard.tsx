@@ -4,6 +4,7 @@ import { MCUItem } from '../types';
 import { toPersianDigits } from './MovieCard';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, deleteDoc, doc, setDoc } from 'firebase/firestore';
+import { normalizeIranPhone } from '../lib/phone';
 import {
   BarChart,
   Bar,
@@ -60,8 +61,7 @@ export const AdminDashboard: React.FC = () => {
   const {
     items,
     isAdmin,
-    loginAdmin,
-    logoutAdmin,
+    logoutUser,
     addItem,
     updateItem,
     deleteItem,
@@ -69,8 +69,6 @@ export const AdminDashboard: React.FC = () => {
   } = useTimeline();
 
   const [activeTab, setActiveTab] = useState<'users' | 'dashboard' | 'content'>('users');
-  const [passInput, setPassInput] = useState('');
-  const [loginError, setLoginError] = useState('');
 
   // دیتابیس زنده فایربیس
   const [registeredUsers, setRegisteredUsers] = useState<AdminUser[]>([]);
@@ -202,9 +200,9 @@ export const AdminDashboard: React.FC = () => {
   // ثبت دستی شماره برای کاربر
   const handleSaveManualPhone = async () => {
     if (!selectedUserDetail) return;
-    const cleanPhone = manualPhoneInput.trim();
+    const cleanPhone = normalizeIranPhone(manualPhoneInput);
     if (!cleanPhone) {
-      alert('لطفاً شماره را وارد کنید');
+      alert('لطفاً شماره معتبر ایران را وارد کنید؛ نمونه: 09123456789');
       return;
     }
 
@@ -218,7 +216,8 @@ export const AdminDashboard: React.FC = () => {
         {
           phoneNumber: cleanPhone,
           phoneVerified: true,
-          phoneVerifiedAt: nowIso
+          phoneVerifiedAt: nowIso,
+          updatedByAdminAt: nowIso
         },
         { merge: true }
       );
@@ -228,6 +227,7 @@ export const AdminDashboard: React.FC = () => {
         doc(db, 'phone_leads', cleanPhone),
         {
           phoneNumber: cleanPhone,
+          uid: selectedUserDetail.id,
           username: selectedUserDetail.username,
           verifiedAt: nowIso
         },
@@ -252,16 +252,6 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (loginAdmin(passInput)) {
-      setLoginError('');
-      setPassInput('');
-    } else {
-      setLoginError('رمز عبور مدیر اشتباه است');
-    }
-  };
-
   if (!isAdmin) {
     return (
       <div className="max-w-md mx-auto px-4 py-16 text-right">
@@ -269,23 +259,10 @@ export const AdminDashboard: React.FC = () => {
           <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-center mx-auto mb-4 text-emerald-400">
             <Lock className="w-8 h-8" />
           </div>
-          <h2 className="text-xl font-bold text-slate-100 mb-2">ورود به پنل مدیریت</h2>
-          <form onSubmit={handleLoginSubmit} className="space-y-4">
-            <input
-              type="password"
-              value={passInput}
-              onChange={(e) => setPassInput(e.target.value)}
-              placeholder="رمز عبور مدیر"
-              className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 text-center"
-            />
-            {loginError && <div className="text-xs text-rose-400 font-semibold">{loginError}</div>}
-            <button
-              type="submit"
-              className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-colors cursor-pointer"
-            >
-              ورود به سیستم
-            </button>
-          </form>
+          <h2 className="text-xl font-bold text-slate-100 mb-2">دسترسی مدیر فعال نیست</h2>
+          <p className="text-sm text-slate-400 leading-7">
+            ابتدا با حساب Firebase مدیر وارد شوید. دسترسی پنل با حساب کاربری و مجوز سروری تعیین می‌شود، نه با رمز ثابت داخل مرورگر.
+          </p>
         </div>
       </div>
     );
@@ -313,7 +290,7 @@ export const AdminDashboard: React.FC = () => {
             <span>دانلود شماره‌ها برای Binger</span>
           </button>
           <button
-            onClick={logoutAdmin}
+            onClick={logoutUser}
             className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-colors cursor-pointer"
           >
             خروج
