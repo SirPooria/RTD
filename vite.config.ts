@@ -14,14 +14,6 @@ export default defineConfig(() => {
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
-      proxy: {
-        '/api/sms': {
-          target: 'http://api.payamak-panel.com',
-          changeOrigin: true,
-          secure: false,
-          rewrite: (path) => path.replace(/^\/api\/sms/, '')
-        }
-      }
     },
   };
 });

@@ -2,16 +2,12 @@
   "entities": {
     "users": {
       "title": "User",
-      "description": "Registered user credentials and activity",
+      "description": "Registered user profile and activity",
       "type": "document",
       "fields": {
         "username": {
           "type": "string",
           "description": "Username"
-        },
-        "password": {
-          "type": "string",
-          "description": "Password"
         },
         "registeredAt": {
           "type": "string",
