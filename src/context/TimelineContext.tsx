@@ -49,6 +49,7 @@ interface TimelineContextType {
 
   // Admin Capabilities
   isAdmin: boolean;
+  authReady: boolean;
   addItem: (newItem: Omit<MCUItem, 'id' | 'chronoOrder'>) => void;
   updateItem: (id: string, updated: Partial<MCUItem>) => void;
   deleteItem: (id: string) => void;
@@ -222,10 +223,12 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Admin Auth
   const [isAdmin, setIsAdmin] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   const [userDataReady, setUserDataReady] = useState(false);
 
   useEffect(() => {
     return onAuthStateChanged(auth, async (firebaseUser) => {
+      setAuthReady(true);
       setUserDataReady(false);
       setWatchedMcuIds(new Set());
       setWatchedSwIds(new Set());
@@ -500,6 +503,7 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         logoutUser,
 
         isAdmin,
+        authReady,
         addItem,
         updateItem,
         deleteItem,

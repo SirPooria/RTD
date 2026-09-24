@@ -40,19 +40,21 @@ export const TimelineView: React.FC = () => {
     essentialCount,
     totalWatchedRuntimeMinutes,
     visitorStats,
-    currentUser
+    currentUser,
+    authReady
   } = useTimeline();
 
   const [showBriefing, setShowBriefing] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   useEffect(() => {
+    if (!authReady) return;
     if (!currentUser) {
       setIsAuthModalOpen(true);
     } else {
       setIsAuthModalOpen(false);
     }
-  }, [currentUser]);
+  }, [authReady, currentUser]);
 
   // Filter items (باگ‌های جستجو هم با ?. برطرف شد)
   const filteredItems = items.filter((item) => {
