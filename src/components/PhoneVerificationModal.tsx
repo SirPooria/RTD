@@ -53,16 +53,14 @@ export const PhoneVerificationModal: React.FC = () => {
     );
   }, [currentUser]);
 
-    useEffect(() => {
-    if (step !== 'otp' || timer <= 0) {
-      return;
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+    if (step === 'otp' && timer > 0) {
+      interval = setInterval(() => {
+        setTimer((prev) => prev - 1);
+      }, 1000);
     }
-    const intervalId = window.setInterval(() => {
-      setTimer((previous) => previous - 1);
-    }, 1000);
-    return () => {
-      window.clearInterval(intervalId);
-    };
+    return () => clearInterval(interval);
   }, [step, timer]);
 
   if (!isOpen || !currentUser) return null;

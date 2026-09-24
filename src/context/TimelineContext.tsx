@@ -26,7 +26,8 @@ interface TimelineContextType {
   watchedIds: Set<string>;
   toggleWatched: (id: string) => void;
   markEraAsWatched: (eraId: string) => void;
-
+  
+  // Filtering & Search
   searchTerm: string;
   setSearchTerm: (term: string) => void;
   statusFilter: FilterStatus;
@@ -36,26 +37,24 @@ interface TimelineContextType {
   selectedEraId: string | 'all';
   setSelectedEraId: (eraId: string | 'all') => void;
 
+  // Detail Modal
   selectedItem: MCUItem | null;
   setSelectedItem: (item: MCUItem | null) => void;
 
+  // User Auth Capabilities (Firebase)
   currentUser: UserState | null;
-  registerUser: (
-    username: string,
-    password: string
-  ) => Promise<{ success: boolean; message: string }>;
-  loginUser: (
-    username: string,
-    password: string
-  ) => Promise<{ success: boolean; message: string }>;
+  registerUser: (username: string, password: string) => Promise<{ success: boolean; message: string }>;
+  loginUser: (username: string, password: string) => Promise<{ success: boolean; message: string }>;
   logoutUser: () => void;
 
+  // Admin Capabilities
   isAdmin: boolean;
   addItem: (newItem: Omit<MCUItem, 'id' | 'chronoOrder'>) => void;
   updateItem: (id: string, updated: Partial<MCUItem>) => void;
   deleteItem: (id: string) => void;
   resetToDefaultData: () => void;
 
+  // Analytics & Computed
   totalItemsCount: number;
   watchedCount: number;
   essentialCount: number;
@@ -69,9 +68,13 @@ const STORAGE_KEYS = {
   WATCHED_MCU: 'road_to_doomsday_watched_ids',
   WATCHED_SW: 'starwars_watched_ids',
   ITEMS: 'road_to_doomsday_items',
+  ERAS: 'road_to_doomsday_eras',
+  ADMIN_AUTH: 'road_to_doomsday_admin_auth',
+  CURRENT_USER: 'road_to_doomsday_current_user',
   UNIVERSE: 'selected_universe'
 };
 
+// Eras پیشفرض برای استاروارز کاملاً منطبق با تایپ Era
 const STARWARS_ERAS: Era[] = [
   {
     id: 'high-republic',
@@ -130,45 +133,43 @@ const STARWARS_ERAS: Era[] = [
     descriptionFa: 'سه‌گانه پایانی و نبرد نهایی مقاومت در برابر محفل یکم'
   }
 ];
-
 const TimelineContext = createContext<TimelineContextType | undefined>(undefined);
 
-export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({
-  children
-}) => {
+export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Universe state
   const [universe, setUniverseState] = useState<UniverseType>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.UNIVERSE);
-      return saved === 'starwars' || saved === 'mcu' ? saved : 'mcu';
+      return (saved === 'starwars' || saved === 'mcu') ? saved : 'mcu';
     } catch {
       return 'mcu';
     }
   });
 
-  const setUniverse = (value: UniverseType) => {
-    setUniverseState(value);
-    localStorage.setItem(STORAGE_KEYS.UNIVERSE, value);
+  const setUniverse = (u: UniverseType) => {
+    setUniverseState(u);
+    localStorage.setItem(STORAGE_KEYS.UNIVERSE, u);
     setSelectedEraId('all');
   };
 
+  // MCU Items state
   const [mcuItems, setMcuItems] = useState<MCUItem[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.ITEMS);
-
       if (saved) {
         const parsed = JSON.parse(saved);
-
         if (Array.isArray(parsed) && parsed.length >= 70) {
           return parsed;
         }
       }
-
       return INITIAL_MCU_ITEMS;
     } catch {
       return INITIAL_MCU_ITEMS;
     }
   });
 
+ // Star Wars Items تبدیل شده به تایپ استاندارد همراه با پوستر و اطلاعات قسمت‌ها
+  // تبدیل آیتم‌های استاروارز به تایپ استاندارد همراه با پوستر و نمایش تعداد قسمت‌ها
   const starwarsItems: MCUItem[] = (starwarsTimelineData as any[]).map((item) => ({
     id: String(item.id),
     chronoOrder: Number(item.order || item.chronoOrder || 1),
@@ -176,33 +177,26 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({
     titleEn: item.titleEn || '',
     releaseYear: Number(item.releaseYear || 2020),
     inUniverseYear: item.inUniverseYear || '',
-    runtimeMinutes: Number(
-      item.runtimeMinutes || (item.type === 'movie' ? 130 : 45)
-    ),
-    runtimeOrEpsDisplay:
-      item.runtimeOrEpsDisplay ||
-      (item.type === 'series'
-        ? `${item.episodes || item.totalEpisodes || ''} قسمت`
-        : undefined),
-    type: item.type || 'movie',
+    runtimeMinutes: Number(item.runtimeMinutes || (item.type === 'movie' ? 130 : 45)),
+    runtimeOrEpsDisplay: item.runtimeOrEpsDisplay || (item.type === 'series' ? `${item.episodes || item.totalEpisodes || ''} قسمت` : undefined),
+    type: (item.type || 'movie'),
     rtScore: Number(item.rtScore || 80),
     isEssential: Boolean(item.isEssential),
     eraId: item.eraId || 'high-republic',
     watchFor: item.watchFor || '',
     tiesIn: item.tiesIn || '',
-    posterUrl:
-      item.posterUrl ||
-      item.poster ||
-      'https://images.unsplash.com/photo-1579566346927-c68383817a25?auto=format&fit=crop&w=600&q=80',
+    posterUrl: item.posterUrl || item.poster || 'https://images.unsplash.com/photo-1579566346927-c68383817a25?auto=format&fit=crop&w=600&q=80',
     timelineNote: item.timelineNote || undefined,
     directorOrCreator: item.directorOrCreator || undefined,
     keyCharacters: item.keyCharacters || undefined,
     trailerUrl: item.trailerUrl || undefined
   }));
 
+  // تعیین آیتم‌ها و دوره‌ها بر اساس دنیای فعال
   const items = universe === 'mcu' ? mcuItems : starwarsItems;
   const eras = universe === 'mcu' ? INITIAL_ERAS : STARWARS_ERAS;
 
+  // Watched state تفکیک‌شده
   const [watchedMcuIds, setWatchedMcuIds] = useState<Set<string>>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.WATCHED_MCU);
@@ -223,7 +217,10 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const watchedIds = universe === 'mcu' ? watchedMcuIds : watchedSwIds;
 
+  // Current User State
   const [currentUser, setCurrentUser] = useState<UserState | null>(null);
+
+  // Admin Auth
   const [isAdmin, setIsAdmin] = useState(false);
   const [userDataReady, setUserDataReady] = useState(false);
 
@@ -232,6 +229,7 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({
       setUserDataReady(false);
       setWatchedMcuIds(new Set());
       setWatchedSwIds(new Set());
+      setIsAdmin(false);
 
       if (!firebaseUser) {
         setCurrentUser(null);
@@ -240,55 +238,48 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({
         return;
       }
 
+      const fallbackUsername = firebaseUser.email?.split('@')[0] || 'user';
+      setCurrentUser({ username: fallbackUsername, uid: firebaseUser.uid });
+
       try {
         const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
         const data = userDoc.exists() ? userDoc.data() : {};
+        const username = typeof data.username === 'string' ? data.username : fallbackUsername;
 
-        const username =
-          typeof data.username === 'string'
-            ? data.username
-            : firebaseUser.email?.split('@')[0] || 'user';
+        if (Array.isArray(data.watchedIds)) setWatchedMcuIds(new Set(data.watchedIds));
+        if (Array.isArray(data.watchedSwIds)) setWatchedSwIds(new Set(data.watchedSwIds));
 
-        if (Array.isArray(data.watchedIds)) {
-          setWatchedMcuIds(new Set(data.watchedIds));
-        }
-
-        if (Array.isArray(data.watchedSwIds)) {
-          setWatchedSwIds(new Set(data.watchedSwIds));
-        }
-
-        const adminDoc = await getDoc(doc(db, 'admins', firebaseUser.uid));
-
-        setIsAdmin(
-          adminDoc.exists() && adminDoc.data().enabled !== false
-        );
-
-        setCurrentUser({
-          username,
-          uid: firebaseUser.uid
-        });
-      } catch (error) {
-        console.error('Error fetching authenticated user:', error);
-        setCurrentUser(null);
-        setIsAdmin(false);
-      } finally {
-        setUserDataReady(true);
+        setCurrentUser({ username, uid: firebaseUser.uid });
+      } catch (err) {
+        console.error('Error fetching authenticated user profile:', err);
       }
+
+      try {
+        const adminDoc = await getDoc(doc(db, 'admins', firebaseUser.uid));
+        setIsAdmin(adminDoc.exists() && adminDoc.data().enabled === true);
+      } catch (err) {
+        console.error('Error checking admin access:', err);
+      }
+
+      setUserDataReady(true);
     });
   }, []);
 
+  // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'movie' | 'series'>(
-    'all'
-  );
+  const [typeFilter, setTypeFilter] = useState<'all' | 'movie' | 'series'>('all');
   const [selectedEraId, setSelectedEraId] = useState<string | 'all'>('all');
+
+  // Modal
   const [selectedItem, setSelectedItem] = useState<MCUItem | null>(null);
 
+  // ذخیره لوکال دیتای مارول
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(mcuItems));
   }, [mcuItems]);
 
+  // ذخیره پیشرفت تماشا
   useEffect(() => {
     const mcuArray = Array.from(watchedMcuIds);
     const swArray = Array.from(watchedSwIds);
@@ -296,8 +287,8 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({
     localStorage.setItem(STORAGE_KEYS.WATCHED_MCU, JSON.stringify(mcuArray));
     localStorage.setItem(STORAGE_KEYS.WATCHED_SW, JSON.stringify(swArray));
 
-    if (currentUser?.uid && userDataReady) {
-      const userDocRef = doc(db, 'users', currentUser.uid);
+     if (currentUser?.uid && userDataReady) {
+       const userDocRef = doc(db, 'users', currentUser.uid);
 
       setDoc(
         userDocRef,
@@ -309,18 +300,17 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({
           lastLoginAt: new Date().toISOString()
         },
         { merge: true }
-      ).catch((error) => {
-        console.error('Error syncing progress:', error);
-      });
+      ).catch((err) => console.error('Error syncing progress:', err));
     }
   }, [watchedMcuIds, watchedSwIds, currentUser, userDataReady]);
 
+// متد کمکی برای جلوگیری از فریز شدن ریکوئست‌های فایراستور
   const fetchDocWithTimeout = async (docRef: any, timeoutMs = 7000) => {
     return Promise.race([
       getDoc(docRef),
-      new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('timeout')), timeoutMs);
-      })
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), timeoutMs)
+      )
     ]);
   };
 
@@ -329,14 +319,8 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({
     const email = `${cleanUsername}@auth.rtd.local`;
 
     try {
-      const credential = await createUserWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
-
+      const credential = await createUserWithEmailAndPassword(auth, email, password);
       const nowIso = new Date().toISOString();
-
       await setDoc(doc(db, 'users', credential.user.uid), {
         username: cleanUsername,
         registeredAt: nowIso,
@@ -346,39 +330,13 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({
         watchedIds: [],
         watchedSwIds: []
       });
-
-      setCurrentUser({
-        username: cleanUsername,
-        uid: credential.user.uid
-      });
-
-      return {
-        success: true,
-        message: 'حساب کاربری با موفقیت ساخته شد.'
-      };
-    } catch (error: any) {
-      const code = error?.code || '';
-
-      if (code === 'auth/email-already-in-use') {
-        return {
-          success: false,
-          message: 'این نام کاربری قبلاً ثبت شده است.'
-        };
-      }
-
-      if (code === 'auth/weak-password') {
-        return {
-          success: false,
-          message: 'رمز عبور باید حداقل ۸ کاراکتر باشد.'
-        };
-      }
-
-      return {
-        success: false,
-        message:
-          'خطا در ثبت نام: ' +
-          (error?.message || 'مشکل در برقراری ارتباط')
-      };
+      setCurrentUser({ username: cleanUsername, uid: credential.user.uid });
+      return { success: true, message: 'حساب کاربری با موفقیت ساخته شد.' };
+    } catch (err: any) {
+      const code = err?.code || '';
+      if (code === 'auth/email-already-in-use') return { success: false, message: 'این نام کاربری قبلاً ثبت شده است.' };
+      if (code === 'auth/weak-password') return { success: false, message: 'رمز عبور باید حداقل ۶ کاراکتر باشد.' };
+      return { success: false, message: 'خطا در ثبت نام: ' + (err?.message || 'مشکل در برقراری ارتباط') };
     }
   };
 
@@ -387,114 +345,51 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({
     const email = `${cleanUsername}@auth.rtd.local`;
 
     const signInAndLoadProfile = async () => {
-      const credential = await signInWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
-
+      const credential = await signInWithEmailAndPassword(auth, email, password);
       const userDocRef = doc(db, 'users', credential.user.uid);
       const docSnap = await fetchDocWithTimeout(userDocRef);
-
-      if (!docSnap.exists()) {
-        return {
-          success: false,
-          message: 'اطلاعات حساب ناقص است؛ با مدیر تماس بگیرید.'
-        };
-      }
-
+      if (!docSnap.exists()) return { success: false, message: 'اطلاعات حساب ناقص است؛ با مدیر تماس بگیرید.' };
       const userData = docSnap.data() as {
         username?: string;
         watchedIds?: string[];
         watchedSwIds?: string[];
       };
+      const nowIso = new Date().toISOString();
+      await setDoc(userDocRef, { lastLoginAt: nowIso }, { merge: true });
 
-      await setDoc(
-        userDocRef,
-        {
-          lastLoginAt: new Date().toISOString()
-        },
-        { merge: true }
-      );
+      if (Array.isArray(userData.watchedIds)) setWatchedMcuIds(new Set(userData.watchedIds));
+      if (Array.isArray(userData.watchedSwIds)) setWatchedSwIds(new Set(userData.watchedSwIds));
 
-      if (Array.isArray(userData.watchedIds)) {
-        setWatchedMcuIds(new Set(userData.watchedIds));
-      }
-
-      if (Array.isArray(userData.watchedSwIds)) {
-        setWatchedSwIds(new Set(userData.watchedSwIds));
-      }
-
-      setCurrentUser({
-        username: userData.username || cleanUsername,
-        uid: credential.user.uid
-      });
-
-      return {
-        success: true,
-        message: 'ورود با موفقیت انجام شد.'
-      };
+      setCurrentUser({ username: userData.username || cleanUsername, uid: credential.user.uid });
+      return { success: true, message: 'ورود با موفقیت انجام شد.' };
     };
 
     try {
       return await signInAndLoadProfile();
-    } catch (error: any) {
-      const errorMessage = (error?.message || '').toLowerCase();
-
-      const needsLegacyMigration =
-        error?.code === 'auth/invalid-credential' ||
-        error?.code === 'auth/user-not-found';
+    } catch (err: any) {
+      const errMsg = (err?.message || '').toLowerCase();
+      const needsLegacyMigration = err?.code === 'auth/invalid-credential' || err?.code === 'auth/user-not-found';
 
       if (needsLegacyMigration) {
         try {
-          const migrationResponse = await fetch(
-            '/api/auth/migrate-legacy',
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                username: cleanUsername,
-                password
-              })
-            }
-          );
-
-          if (migrationResponse.ok) {
-            return await signInAndLoadProfile();
-          }
+          const migrationResponse = await fetch('/api/auth/migrate-legacy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: cleanUsername, password })
+          });
+          if (migrationResponse.ok) return await signInAndLoadProfile();
         } catch (migrationError) {
-          console.error(
-            'Legacy account migration request failed:',
-            migrationError
-          );
+          console.error('Legacy account migration request failed:', migrationError);
         }
-
+        return { success: false, message: 'نام کاربری یا رمز عبور اشتباه است.' };
+      }
+      if (errMsg.includes('offline') || errMsg.includes('timeout') || errMsg.includes('unavailable')) {
         return {
           success: false,
-          message: 'نام کاربری یا رمز عبور اشتباه است.'
+          message: 'ارتباط با سرور برقرار نشد. لطفاً وضعیت VPN یا اینترنت خود را چک کرده و دوباره تلاش کنید.'
         };
       }
-
-      if (
-        errorMessage.includes('offline') ||
-        errorMessage.includes('timeout') ||
-        errorMessage.includes('unavailable')
-      ) {
-        return {
-          success: false,
-          message:
-            'ارتباط با سرور برقرار نشد. لطفاً وضعیت VPN یا اینترنت خود را چک کرده و دوباره تلاش کنید.'
-        };
-      }
-
-      return {
-        success: false,
-        message:
-          'خطا در ورود: ' +
-          (error?.message || 'مشکل در برقراری ارتباط')
-      };
+      return { success: false, message: 'خطا در ورود: ' + (err?.message || 'مشکل در برقراری ارتباط') };
     }
   };
 
@@ -507,92 +402,54 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const toggleWatched = (id: string) => {
-    const updateSet = (previous: Set<string>) => {
-      const next = new Set(previous);
-
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-
+    const updater = (prev: Set<string>) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     };
 
-    if (universe === 'mcu') {
-      setWatchedMcuIds(updateSet);
-    } else {
-      setWatchedSwIds(updateSet);
-    }
+    if (universe === 'mcu') setWatchedMcuIds(updater);
+    else setWatchedSwIds(updater);
   };
 
   const markEraAsWatched = (eraId: string) => {
-    const eraItemIds = items
-      .filter((item) => item.eraId === eraId)
-      .map((item) => item.id);
-
-    const updateSet = (previous: Set<string>) => {
-      const next = new Set(previous);
+    const eraItemIds = items.filter((item) => item.eraId === eraId).map((item) => item.id);
+    const updater = (prev: Set<string>) => {
+      const next = new Set(prev);
       eraItemIds.forEach((id) => next.add(id));
       return next;
     };
 
-    if (universe === 'mcu') {
-      setWatchedMcuIds(updateSet);
-    } else {
-      setWatchedSwIds(updateSet);
-    }
+    if (universe === 'mcu') setWatchedMcuIds(updater);
+    else setWatchedSwIds(updater);
   };
 
-  const addItem = (
-    newItemData: Omit<MCUItem, 'id' | 'chronoOrder'>
-  ) => {
-    const nextOrder =
-      mcuItems.length > 0
-        ? Math.max(...mcuItems.map((item) => item.chronoOrder)) + 1
-        : 1;
-
+  const addItem = (newItemData: Omit<MCUItem, 'id' | 'chronoOrder'>) => {
+    const nextOrder = mcuItems.length > 0 ? Math.max(...mcuItems.map((i) => i.chronoOrder)) + 1 : 1;
     const newItem: MCUItem = {
       ...newItemData,
       id: `mcu-item-${Date.now()}`,
       chronoOrder: nextOrder
     };
-
-    setMcuItems((previous) =>
-      [...previous, newItem].sort(
-        (a, b) => a.chronoOrder - b.chronoOrder
-      )
-    );
+    setMcuItems((prev) => [...prev, newItem].sort((a, b) => a.chronoOrder - b.chronoOrder));
   };
 
   const updateItem = (id: string, updated: Partial<MCUItem>) => {
-    setMcuItems((previous) =>
-      previous.map((item) =>
-        item.id === id ? { ...item, ...updated } : item
-      )
-    );
-
+    setMcuItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...updated } : item)));
     if (selectedItem?.id === id) {
-      setSelectedItem((previous) =>
-        previous ? { ...previous, ...updated } : null
-      );
+      setSelectedItem((prev) => (prev ? { ...prev, ...updated } : null));
     }
   };
 
   const deleteItem = (id: string) => {
-    setMcuItems((previous) =>
-      previous.filter((item) => item.id !== id)
-    );
-
-    setWatchedMcuIds((previous) => {
-      const next = new Set(previous);
+    setMcuItems((prev) => prev.filter((item) => item.id !== id));
+    setWatchedMcuIds((prev) => {
+      const next = new Set(prev);
       next.delete(id);
       return next;
     });
-
-    if (selectedItem?.id === id) {
-      setSelectedItem(null);
-    }
+    if (selectedItem?.id === id) setSelectedItem(null);
   };
 
   const resetToDefaultData = () => {
@@ -604,27 +461,15 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({
     localStorage.removeItem(STORAGE_KEYS.WATCHED_SW);
   };
 
+  // محاسبات آمار
   const totalItemsCount = items.length;
-  const watchedCount = items.filter((item) =>
-    watchedIds.has(item.id)
-  ).length;
-  const essentialCount = items.filter(
-    (item) => item.isEssential
-  ).length;
-  const essentialWatchedCount = items.filter(
-    (item) => item.isEssential && watchedIds.has(item.id)
-  ).length;
-  const progressPercentage =
-    totalItemsCount > 0
-      ? Math.round((watchedCount / totalItemsCount) * 100)
-      : 0;
-
+  const watchedCount = items.filter((item) => watchedIds.has(item.id)).length;
+  const essentialCount = items.filter((item) => item.isEssential).length;
+  const essentialWatchedCount = items.filter((item) => item.isEssential && watchedIds.has(item.id)).length;
+  const progressPercentage = totalItemsCount > 0 ? Math.round((watchedCount / totalItemsCount) * 100) : 0;
   const totalWatchedRuntimeMinutes = items
     .filter((item) => watchedIds.has(item.id))
-    .reduce(
-      (sum, item) => sum + (item.runtimeMinutes || 0),
-      0
-    );
+    .reduce((sum, item) => sum + (item.runtimeMinutes || 0), 0);
 
   return (
     <TimelineContext.Provider
@@ -676,10 +521,8 @@ export const TimelineProvider: React.FC<{ children: React.ReactNode }> = ({
 
 export const useTimeline = () => {
   const context = useContext(TimelineContext);
-
   if (!context) {
     throw new Error('useTimeline must be used within a TimelineProvider');
   }
-
   return context;
 };
