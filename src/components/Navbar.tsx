@@ -21,14 +21,11 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) =
   } = useTimeline();
   
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const isPoorafAdmin = currentUser?.username?.toLowerCase() === 'pooraf';
-
-  // Automatically exit admin view if current user is not Pooraf
   useEffect(() => {
-    if (currentView === 'admin' && !isPoorafAdmin) {
+    if (currentView === 'admin' && !isAdmin) {
       setCurrentView('timeline');
     }
-  }, [currentView, isPoorafAdmin, setCurrentView]);
+  }, [currentView, isAdmin, setCurrentView]);
 
   return (
     <>
@@ -147,7 +144,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) =
             </button>
 
             {/* Admin Panel Button */}
-            {isPoorafAdmin && (
+            {isAdmin && (
               <button
                 onClick={() => setCurrentView('admin')}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTimeline } from '../context/TimelineContext';
-import { User, Lock, LogIn, UserPlus, X, CheckCircle2, ShieldCheck, AlertCircle, Phone } from 'lucide-react';
+import { User, Lock, LogIn, UserPlus, X, CheckCircle2, ShieldCheck, AlertCircle } from 'lucide-react';
 
 interface UserAuthModalProps {
   isOpen: boolean;
@@ -13,7 +13,6 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
@@ -30,36 +29,28 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
       return;
     }
 
-    if (username.trim().length < 3) {
-      setErrorMsg('نام کاربری باید حداقل ۳ کاراکتر باشد.');
+    const cleanUsername = username.trim().toLowerCase();
+    if (!/^[a-z0-9_]{3,32}$/.test(cleanUsername)) {
+      setErrorMsg('نام کاربری باید ۳ تا ۳۲ کاراکتر و فقط شامل حروف انگلیسی، عدد یا _ باشد.');
       return;
     }
 
-    if (password.trim().length < 6) {
-      setErrorMsg('رمز عبور باید حداقل ۶ کاراکتر باشد.');
+    if (password.length < 8) {
+      setErrorMsg('رمز عبور باید حداقل ۸ کاراکتر باشد.');
       return;
-    }
-
-    if (mode === 'register') {
-      const cleanPhone = phoneNumber.trim();
-      if (!/^09[0-9]{9}$/.test(cleanPhone)) {
-        setErrorMsg('لطفاً شماره موبایل معتبر ۱۱ رقمی وارد کنید (مثال: 09123456789)');
-        return;
-      }
     }
 
     setLoading(true);
 
     try {
       if (mode === 'register') {
-        const res = await (registerUser as any)(username.trim(), password.trim(), phoneNumber.trim());
+        const res = await registerUser(cleanUsername, password);
         if (res.success) {
           setSuccessMsg(res.message);
           setTimeout(() => {
             onClose();
             setUsername('');
             setPassword('');
-            setPhoneNumber('');
           }, 1200);
         } else {
           setErrorMsg(res.message);
@@ -72,7 +63,6 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
             onClose();
             setUsername('');
             setPassword('');
-            setPhoneNumber('');
           }, 1200);
         } else {
           setErrorMsg(res.message);
@@ -176,32 +166,15 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose })
                 </div>
               </div>
 
-              {mode === 'register' && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">شماره موبایل </label>
-                  <div className="relative">
-                    <Phone className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                    <input
-                      type="tel"
-                      value={phoneNumber}
-                      onChange={(e) => setPhoneNumber(e.target.value)}
-                      placeholder="09123456789"
-                      className="w-full pr-10 pl-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
-                      dir="ltr"
-                    />
-                  </div>
-                </div>
-              )}
-
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1.5">رمز عبور (Password)</label>
                 <div className="relative">
                   <Lock className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                  <input
-                    type="password"
+                    <input
+                      type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="حداقل ۶ کاراکتر"
+                      placeholder="حداقل ۸ کاراکتر"
                     className="w-full pr-10 pl-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
                     dir="ltr"
                   />

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useTimeline } from '../context/TimelineContext';
-import { db } from '../lib/firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db } from '../lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { normalizeIranPhone } from '../lib/phone';
 
 export const PhoneVerificationModal: React.FC = () => {
   const { currentUser } = useTimeline();
@@ -9,55 +10,51 @@ export const PhoneVerificationModal: React.FC = () => {
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otpCode, setOtpCode] = useState('');
-  const [generatedOtp, setGeneratedOtp] = useState('');
-  const [timer, setTimer] = useState(60);
+  const [challenge, setChallenge] = useState('');
+  const [timer, setTimer] = useState(300);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  // بررسی وضعیت شماره کاربر (هم از حافظه لوکال و هم از فایربیس)
   useEffect(() => {
-    if (!currentUser?.username) {
+    if (!currentUser?.uid) {
       setIsOpen(false);
       return;
     }
 
-    const cleanUsername = currentUser.username.trim().toLowerCase();
+    const userDocRef = doc(db, 'users', currentUser.uid);
+    return onSnapshot(
+      userDocRef,
+      (snapshot) => {
+        const userData = snapshot.data();
+        const verifiedPhone = typeof userData?.phoneNumber === 'string'
+          ? normalizeIranPhone(userData.phoneNumber)
+          : null;
 
-    // ۱. بررسی سریع در حافظه لوکال
-    const localPhone = localStorage.getItem(`phone_verified_${cleanUsername}`);
-    if (localPhone) {
-      setIsOpen(false);
-      return;
-    }
-
-    // ۲. بررسی در دیتابیس Firestore
-    const userDocRef = doc(db, 'users', cleanUsername);
-    getDoc(userDocRef)
-      .then((docSnap) => {
-        if (docSnap.exists()) {
-          const userData = docSnap.data();
-          if (userData.phoneNumber && userData.phoneNumber.trim().length >= 10) {
-            // شماره در دیتابیس هست؛ در حافظه ذخیره می‌کنیم تا دیگر باز نشود
-            localStorage.setItem(`phone_verified_${cleanUsername}`, userData.phoneNumber.trim());
-            setIsOpen(false);
-          } else {
-            // کاربر شماره ندارد؛ باز شدن فرم از مرحله اول
-            setStep('phone');
-            setPhoneNumber('');
-            setOtpCode('');
-            setErrorMessage('');
-            setIsOpen(true);
-          }
+        if (userData?.phoneVerified === true && verifiedPhone) {
+          setIsOpen(false);
+          setChallenge('');
+          setOtpCode('');
+          return;
         }
-      })
-      .catch((err) => {
+
+        setStep('phone');
+        setPhoneNumber('');
+        setOtpCode('');
+        setChallenge('');
+        setErrorMessage('');
+        setSuccessMessage('');
+        setIsOpen(true);
+      },
+      (err) => {
         console.error('Error checking user phone:', err);
-      });
+        setErrorMessage('وضعیت شماره قابل بررسی نیست. صفحه را دوباره بارگذاری کنید.');
+      }
+    );
   }, [currentUser]);
 
   useEffect(() => {
-    let interval: any = null;
+    let interval: ReturnType<typeof setInterval> | null = null;
     if (step === 'otp' && timer > 0) {
       interval = setInterval(() => {
         setTimer((prev) => prev - 1);
@@ -68,52 +65,37 @@ export const PhoneVerificationModal: React.FC = () => {
 
   if (!isOpen || !currentUser) return null;
 
-  const isValidIranPhone = (phone: string) => {
-    return /^09[0-9]{9}$/.test(phone.trim());
-  };
-
-  const handleSendOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSendOtp = async (e?: React.FormEvent | React.MouseEvent) => {
+    e?.preventDefault();
     setErrorMessage('');
     setSuccessMessage('');
 
-    const cleanPhone = phoneNumber.trim();
-    if (!isValidIranPhone(cleanPhone)) {
-      setErrorMessage('لطفاً شماره موبایل معتبر ۱۱ رقمی وارد کنید (مثال: 09123456789)');
+    const cleanPhone = normalizeIranPhone(phoneNumber);
+    if (!cleanPhone) {
+      setErrorMessage('شماره معتبر وارد کنید؛ نمونه‌های قابل قبول: 09123456789 یا +989123456789');
       return;
     }
 
     setIsLoading(true);
-    const code = Math.floor(10000 + Math.random() * 90000).toString();
-    setGeneratedOtp(code);
 
     try {
-      const params = new URLSearchParams();
-      params.append('username', '989387596456');
-      params.append('password', '8fd880f4-1576-41c8-80c0-ca5fd00f194b');
-      params.append('text', code);
-      params.append('to', cleanPhone);
-      params.append('bodyId', '534645');
-
-      const response = await fetch('/api/sms/post/Send.asmx/SendByBaseNumber2', {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error('نشست کاربر منقضی شده است. دوباره وارد شوید.');
+      const response = await fetch('/api/sms/send-otp', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
         },
-        body: params.toString()
+        body: JSON.stringify({ phoneNumber: cleanPhone })
       });
-
-      const responseText = await response.text();
-      const match = responseText.match(/<string[^>]*>(.*?)<\/string>/);
-      const resultVal = match ? match[1].trim() : responseText.trim();
-
-      if (resultVal.length >= 10 || (!isNaN(Number(resultVal)) && Number(resultVal) > 100)) {
-        setStep('otp');
-        setTimer(60);
-        setSuccessMessage('کد تایید با موفقیت پیامک شد.');
-      } else {
-        throw new Error(`خطای پنل پیامک (کد: ${resultVal})`);
-      }
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'ارسال پیامک انجام نشد.');
+      setPhoneNumber(cleanPhone);
+      setChallenge(result.challenge);
+      setStep('otp');
+      setTimer(300);
+      setSuccessMessage('کد تایید ارسال شد. تا ۵ دقیقه فرصت دارید.');
     } catch (err: any) {
       console.error('SMS Send Error:', err);
       setErrorMessage(err?.message || 'خطا در ارسال پیامک. لطفاً مجدداً تلاش کنید.');
@@ -126,46 +108,26 @@ export const PhoneVerificationModal: React.FC = () => {
     e.preventDefault();
     setErrorMessage('');
 
-    if (otpCode.trim() !== generatedOtp) {
-      setErrorMessage('کد تایید وارد شده نادرست است.');
-      return;
-    }
-
     setIsLoading(true);
-    const cleanPhone = phoneNumber.trim();
-    const nowIso = new Date().toISOString();
-    const cleanUsername = currentUser.username.trim().toLowerCase();
 
     try {
-      // ذخیره در دیتابیس کاربر
-      await setDoc(
-        doc(db, 'users', cleanUsername),
-        {
-          phoneNumber: cleanPhone,
-          phoneVerified: true,
-          phoneVerifiedAt: nowIso
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error('نشست کاربر منقضی شده است. دوباره وارد شوید.');
+      const response = await fetch('/api/sms/verify-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
         },
-        { merge: true }
-      );
-
-      // ذخیره در سرنخ‌های شماره برای بینجر
-      await setDoc(
-        doc(db, 'phone_leads', cleanPhone),
-        {
-          phoneNumber: cleanPhone,
-          username: cleanUsername,
-          verifiedAt: nowIso
-        },
-        { merge: true }
-      );
-
-      // ثبت در لوکال‌استوریج تا با ریفرش دوباره باز نشود
-      localStorage.setItem(`phone_verified_${cleanUsername}`, cleanPhone);
+        body: JSON.stringify({ challenge, code: otpCode })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'کد تایید نادرست است.');
       setIsOpen(false);
+      setChallenge('');
     } catch (err: any) {
       console.error('Error attaching phone to user:', err);
-      localStorage.setItem(`phone_verified_${cleanUsername}`, cleanPhone);
-      setIsOpen(false);
+      setErrorMessage(err?.message || 'خطا در تایید شماره.');
     } finally {
       setIsLoading(false);
     }
