@@ -8,6 +8,9 @@ import { PhoneVerificationModal } from './components/PhoneVerificationModal';
 import { Analytics } from '@vercel/analytics/react';
 import { Footer } from './components/Footer';
 
+// فلگ تایید شماره موبایل و ارسال پیامک (در صورت نیاز به فعال‌سازی مجدد کافیست مقدار آن را true کنید)
+const ENABLE_PHONE_VERIFICATION = false;
+
 export default function App() {
   const [currentView, setCurrentView] = useState<'timeline' | 'admin'>('timeline');
 
@@ -20,7 +23,8 @@ export default function App() {
           {currentView === 'timeline' ? <TimelineView /> : <AdminDashboard />}
         </main>
         <MovieDetailModal />
-        <PhoneVerificationModal />
+        {/* دریافت شماره تلفن و تایید پیامکی موقتاً غیرفعال شده است */}
+        {ENABLE_PHONE_VERIFICATION && <PhoneVerificationModal />}
         <Footer />
         <Analytics />
       </div>
